@@ -14,9 +14,13 @@
 
 ## Next queue
 
-- [ ] beta-2 feat(input): implement iFacialMocap UDP receiver
-- [ ] beta-2 feat(input): add receiver state management
-- [ ] beta-2 test(input): add UDP frame parsing tests
+- [x] beta-2 feat(input): implement iFacialMocap UDP receiver
+- [x] beta-2 feat(input): add receiver state management
+- [x] beta-2 test(input): add UDP frame parsing tests
+
+- [ ] beta-3 feat(input): implement iFacialMocap TCP receiver
+- [ ] beta-3 feat(input): add TCP frame reassembly
+- [ ] beta-3 test(input): add TCP stream parsing tests
 
 ## Commit Unit Convention
 
