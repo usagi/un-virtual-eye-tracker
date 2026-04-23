@@ -1,0 +1,11 @@
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Local runtime artifacts
+/config/
+/logs/
+
+# Editor
+.DS_Store
+Thumbs.db

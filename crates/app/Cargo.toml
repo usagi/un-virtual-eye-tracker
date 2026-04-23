@@ -1,0 +1,15 @@
+[package]
+name = "unvet-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tracing.workspace = true
+unvet-config = { path = "../config" }
+unvet-core = { path = "../core" }
+unvet-input-ifacialmocap = { path = "../input-ifacialmocap" }
+unvet-output-ets2 = { path = "../output-ets2" }
+unvet-output-keyboard = { path = "../output-keyboard" }
+unvet-output-mouse = { path = "../output-mouse" }
