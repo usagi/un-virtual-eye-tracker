@@ -30,7 +30,7 @@
 - [x] gamma-1 feat(calib): persist calibration data
 - [x] gamma-2 feat(map): add axis sensitivity and deadzone
 - [x] gamma-2 feat(map): add response curve presets
-- [ ] gamma-3 feat(filter): add exponential smoothing
+- [x] gamma-3 feat(filter): add exponential smoothing
 
 ## Commit Unit Convention
 
