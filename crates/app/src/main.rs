@@ -1,7 +1,12 @@
 use std::{env, path::PathBuf};
 
 use tracing::{info, warn};
-use unvet_config::{AppConfig, InputSource, OutputBackendKind};
+use unvet_config::{
+ AppConfig,
+ InputSource,
+ MappingCurvePreset,
+ OutputBackendKind
+};
 use unvet_core::{
  calibration::NeutralPoseCalibration,
  logging,
@@ -9,6 +14,7 @@ use unvet_core::{
   map_angle_to_normalized,
   mix_eye_and_head,
   AxisMappingSettings,
+   ResponseCurvePreset,
  },
  model::{OutputFrame, TrackingFrame},
  ports::{InputReceiver, OutputBackend},
@@ -25,16 +31,23 @@ fn build_output_frame(frame: TrackingFrame, config: &AppConfig) -> OutputFrame {
 
  let mixed_yaw = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, yaw_mix);
  let mixed_pitch = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, pitch_mix);
+ let response_curve = match config.mapping.response_curve_preset {
+  MappingCurvePreset::Linear => ResponseCurvePreset::Linear,
+  MappingCurvePreset::Smooth => ResponseCurvePreset::Smooth,
+  MappingCurvePreset::Aggressive => ResponseCurvePreset::Aggressive,
+ };
 
  let yaw_settings = AxisMappingSettings {
     sensitivity: config.mapping.yaw_sensitivity,
     deadzone: config.mapping.deadzone_percent,
     max_input_angle_deg: 35.0,
+  response_curve,
  };
  let pitch_settings = AxisMappingSettings {
     sensitivity: config.mapping.pitch_sensitivity,
     deadzone: config.mapping.deadzone_percent,
     max_input_angle_deg: 25.0,
+  response_curve,
  };
 
  OutputFrame {

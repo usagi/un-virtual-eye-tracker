@@ -30,6 +30,20 @@ impl Default for OutputBackendKind {
  }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MappingCurvePreset {
+ Linear,
+ Smooth,
+ Aggressive
+}
+
+impl Default for MappingCurvePreset {
+ fn default() -> Self {
+  Self::Linear
+ }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct InputConfig {
@@ -73,6 +87,7 @@ pub struct MappingConfig {
  pub deadzone_percent: f32,
  pub yaw_sensitivity: f32,
  pub pitch_sensitivity: f32,
+ pub response_curve_preset: MappingCurvePreset,
  pub eye_head_mix_yaw: f32,
  pub eye_head_mix_pitch: f32,
 }
@@ -84,6 +99,7 @@ impl Default for MappingConfig {
    deadzone_percent: 0.06,
     yaw_sensitivity: 1.0,
     pitch_sensitivity: 1.0,
+    response_curve_preset: MappingCurvePreset::default(),
    eye_head_mix_yaw: 0.7,
    eye_head_mix_pitch: 0.4,
   }
