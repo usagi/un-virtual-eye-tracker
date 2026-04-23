@@ -1,3 +1,4 @@
+pub mod calibration;
 pub mod error;
 pub mod logging;
 pub mod model;
