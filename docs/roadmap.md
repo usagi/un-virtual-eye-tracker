@@ -28,8 +28,8 @@
 
 - [x] gamma-1 feat(calib): add neutral pose calibration
 - [x] gamma-1 feat(calib): persist calibration data
-- [ ] gamma-2 feat(map): add axis sensitivity and deadzone
-- [ ] gamma-2 feat(map): add response curve presets
+- [x] gamma-2 feat(map): add axis sensitivity and deadzone
+- [x] gamma-2 feat(map): add response curve presets
 - [ ] gamma-3 feat(filter): add exponential smoothing
 
 ## Commit Unit Convention
