@@ -35,12 +35,27 @@ impl Default for OutputBackendKind {
 pub enum MappingCurvePreset {
  Linear,
  Smooth,
- Aggressive
+ Aggressive,
 }
 
 impl Default for MappingCurvePreset {
  fn default() -> Self {
   Self::Linear
+ }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MappingBlendPreset {
+ Custom,
+ Balanced,
+ EyeDominant,
+ HeadDominant,
+}
+
+impl Default for MappingBlendPreset {
+ fn default() -> Self {
+  Self::Custom
  }
 }
 
@@ -88,6 +103,7 @@ pub struct MappingConfig {
  pub yaw_sensitivity: f32,
  pub pitch_sensitivity: f32,
  pub response_curve_preset: MappingCurvePreset,
+ pub head_eye_blend_preset: MappingBlendPreset,
  pub eye_head_mix_yaw: f32,
  pub eye_head_mix_pitch: f32,
 }
@@ -97,9 +113,10 @@ impl Default for MappingConfig {
   Self {
    smoothing_alpha: 0.18,
    deadzone_percent: 0.06,
-    yaw_sensitivity: 1.0,
-    pitch_sensitivity: 1.0,
-    response_curve_preset: MappingCurvePreset::default(),
+   yaw_sensitivity: 1.0,
+   pitch_sensitivity: 1.0,
+   response_curve_preset: MappingCurvePreset::default(),
+    head_eye_blend_preset: MappingBlendPreset::default(),
    eye_head_mix_yaw: 0.7,
    eye_head_mix_pitch: 0.4,
   }

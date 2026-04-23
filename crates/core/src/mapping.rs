@@ -5,6 +5,14 @@ pub enum ResponseCurvePreset {
  Aggressive,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadEyeBlendPreset {
+ Custom,
+ Balanced,
+ EyeDominant,
+ HeadDominant,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AxisMappingSettings {
  pub sensitivity: f32,
@@ -27,6 +35,15 @@ impl Default for AxisMappingSettings {
 pub fn mix_eye_and_head(eye_deg: f32, head_deg: f32, eye_weight: f32) -> f32 {
  let eye_weight = eye_weight.clamp(0.0, 1.0);
  eye_deg * eye_weight + head_deg * (1.0 - eye_weight)
+}
+
+pub fn resolve_head_eye_mix(preset: HeadEyeBlendPreset, custom_yaw: f32, custom_pitch: f32) -> (f32, f32) {
+ match preset {
+  HeadEyeBlendPreset::Custom => (custom_yaw.clamp(0.0, 1.0), custom_pitch.clamp(0.0, 1.0)),
+  HeadEyeBlendPreset::Balanced => (0.7, 0.4),
+  HeadEyeBlendPreset::EyeDominant => (0.85, 0.7),
+  HeadEyeBlendPreset::HeadDominant => (0.45, 0.25),
+ }
 }
 
 pub fn map_angle_to_normalized(angle_deg: f32, settings: AxisMappingSettings) -> f32 {
@@ -67,8 +84,10 @@ fn apply_response_curve(value: f32, preset: ResponseCurvePreset) -> f32 {
 #[cfg(test)]
 mod tests {
  use super::{
+  HeadEyeBlendPreset,
   map_angle_to_normalized,
   mix_eye_and_head,
+  resolve_head_eye_mix,
   AxisMappingSettings,
     ResponseCurvePreset,
  };
@@ -77,6 +96,20 @@ mod tests {
  fn mix_eye_and_head_uses_weight() {
   let value = mix_eye_and_head(10.0, 2.0, 0.75);
   assert!((value - 8.0).abs() < 0.001);
+ }
+
+ #[test]
+ fn custom_blend_mix_is_clamped() {
+  let (yaw, pitch) = resolve_head_eye_mix(HeadEyeBlendPreset::Custom, 1.4, -0.2);
+  assert!((yaw - 1.0).abs() < 0.001);
+  assert!((pitch - 0.0).abs() < 0.001);
+ }
+
+ #[test]
+ fn blend_preset_uses_fixed_weights() {
+  let (yaw, pitch) = resolve_head_eye_mix(HeadEyeBlendPreset::EyeDominant, 0.1, 0.1);
+  assert!((yaw - 0.85).abs() < 0.001);
+  assert!((pitch - 0.7).abs() < 0.001);
  }
 
  #[test]

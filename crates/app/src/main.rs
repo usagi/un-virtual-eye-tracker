@@ -4,18 +4,21 @@ use tracing::{info, warn};
 use unvet_config::{
  AppConfig,
  InputSource,
+ MappingBlendPreset,
  MappingCurvePreset,
- OutputBackendKind
+ OutputBackendKind,
 };
 use unvet_core::{
  calibration::NeutralPoseCalibration,
  filter::OutputFrameSmoother,
  logging,
  mapping::{
+  HeadEyeBlendPreset,
   map_angle_to_normalized,
   mix_eye_and_head,
+  resolve_head_eye_mix,
   AxisMappingSettings,
-   ResponseCurvePreset,
+  ResponseCurvePreset,
  },
  model::{OutputFrame, TrackingFrame},
  ports::{InputReceiver, OutputBackend},
@@ -27,8 +30,17 @@ fn default_config_path() -> PathBuf {
 }
 
 fn build_output_frame(frame: TrackingFrame, config: &AppConfig) -> OutputFrame {
- let yaw_mix = config.mapping.eye_head_mix_yaw;
- let pitch_mix = config.mapping.eye_head_mix_pitch;
+ let blend_preset = match config.mapping.head_eye_blend_preset {
+  MappingBlendPreset::Custom => HeadEyeBlendPreset::Custom,
+  MappingBlendPreset::Balanced => HeadEyeBlendPreset::Balanced,
+  MappingBlendPreset::EyeDominant => HeadEyeBlendPreset::EyeDominant,
+  MappingBlendPreset::HeadDominant => HeadEyeBlendPreset::HeadDominant,
+ };
+ let (yaw_mix, pitch_mix) = resolve_head_eye_mix(
+  blend_preset,
+  config.mapping.eye_head_mix_yaw,
+  config.mapping.eye_head_mix_pitch,
+ );
 
  let mixed_yaw = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, yaw_mix);
  let mixed_pitch = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, pitch_mix);
