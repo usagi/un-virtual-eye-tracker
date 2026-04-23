@@ -1,6 +1,7 @@
 # U.N. Virtual Eye Tracker ; iFacialMocap / Waidayo ベース視線入力アプリ 開発計画書
 
 略称: UNVET
+概要: PC Virtual Eye Tracking System with iFacialMocap and VMC(Waidayo/Warudo/WebcamMotionCapture/VSeeFace/...)
 
 ## 0. 文書情報
 
