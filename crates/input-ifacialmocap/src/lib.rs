@@ -7,8 +7,7 @@ use std::{
 use unvet_core::{
  model::{RawTrackingFrame, TrackingFrame},
  ports::InputReceiver,
- AppError,
- AppResult,
+ AppError, AppResult,
 };
 
 pub const IFACIALMOCAP_UDP_PORT: u16 = 49983;
@@ -78,9 +77,9 @@ impl IfacialMocapReceiver {
    buffered_frame: None,
    socket: None,
    receive_buffer: [0; 8192],
-    tcp_stream: None,
-    tcp_read_buffer: [0; 4096],
-    tcp_reassembly_buffer: Vec::with_capacity(4096),
+   tcp_stream: None,
+   tcp_read_buffer: [0; 4096],
+   tcp_reassembly_buffer: Vec::with_capacity(4096),
    stats: ReceiverStats::default(),
   }
  }
@@ -94,11 +93,11 @@ impl IfacialMocapReceiver {
  }
 
  pub fn connect(&mut self) -> AppResult<()> {
-    if self.options.use_tcp {
-     return self.connect_tcp();
-    }
+  if self.options.use_tcp {
+   return self.connect_tcp();
+  }
 
-    self.connect_udp()
+  self.connect_udp()
  }
 
  fn connect_udp(&mut self) -> AppResult<()> {
@@ -165,7 +164,10 @@ impl IfacialMocapReceiver {
   let destination = match destination_candidates.next() {
    Some(destination) => destination,
    None => {
-    let message = format!("no TCP destination could be resolved for '{}:{}'", self.options.host, self.options.tcp_port);
+    let message = format!(
+     "no TCP destination could be resolved for '{}:{}'",
+     self.options.host, self.options.tcp_port
+    );
     self.record_error(message.clone());
     return Err(AppError::InvalidState(message));
    },
@@ -194,8 +196,8 @@ impl IfacialMocapReceiver {
   self.active = false;
   self.buffered_frame = None;
   self.socket = None;
-    self.tcp_stream = None;
-    self.tcp_reassembly_buffer.clear();
+  self.tcp_stream = None;
+  self.tcp_reassembly_buffer.clear();
  }
 
  pub fn stats(&self) -> &ReceiverStats {
@@ -204,7 +206,7 @@ impl IfacialMocapReceiver {
 
  pub fn clear_error(&mut self) {
   self.stats.last_error = None;
-    if self.socket.is_some() || self.tcp_stream.is_some() {
+  if self.socket.is_some() || self.tcp_stream.is_some() {
    self.state = ConnectionState::Receiving;
    self.active = true;
   } else {
@@ -290,7 +292,7 @@ impl IfacialMocapReceiver {
      self.stats.tcp_bytes_received += size as u64;
      self.stats.last_packet_timestamp_ms = Some(now_millis());
      self.tcp_reassembly_buffer.extend_from_slice(&self.tcp_read_buffer[..size]);
-      self.trim_tcp_reassembly_buffer();
+     self.trim_tcp_reassembly_buffer();
      if let Some(frame) = self.parse_reassembled_tcp_frames() {
       latest = Some(frame);
      }
@@ -318,28 +320,26 @@ impl IfacialMocapReceiver {
  }
 
  fn trim_tcp_reassembly_buffer(&mut self) {
-   if self.tcp_reassembly_buffer.len() <= TCP_REASSEMBLY_MAX_BYTES {
-    return;
-   }
+  if self.tcp_reassembly_buffer.len() <= TCP_REASSEMBLY_MAX_BYTES {
+   return;
+  }
 
-   let overflow = self.tcp_reassembly_buffer.len() - TCP_REASSEMBLY_MAX_BYTES;
-   self.tcp_reassembly_buffer.drain(..overflow);
-   self.stats.frames_dropped += 1;
-   self.stats.last_error = Some(format!("TCP reassembly buffer overflow: dropped {overflow} byte(s)"));
+  let overflow = self.tcp_reassembly_buffer.len() - TCP_REASSEMBLY_MAX_BYTES;
+  self.tcp_reassembly_buffer.drain(..overflow);
+  self.stats.frames_dropped += 1;
+  self.stats.last_error = Some(format!("TCP reassembly buffer overflow: dropped {overflow} byte(s)"));
  }
 
  fn parse_reassembled_tcp_frames(&mut self) -> Option<TrackingFrame> {
   let mut latest = None;
 
-  while let Some(frame_end_index) = self
-   .tcp_reassembly_buffer
-   .iter()
-    .position(|byte| is_tcp_delimiter(*byte))
-  {
+  while let Some(frame_end_index) = self.tcp_reassembly_buffer.iter().position(|byte| is_tcp_delimiter(*byte)) {
    let frame_with_delimiter: Vec<u8> = self.tcp_reassembly_buffer.drain(..=frame_end_index).collect();
    let raw_frame = &frame_with_delimiter[..frame_with_delimiter.len().saturating_sub(1)];
    let payload = String::from_utf8_lossy(raw_frame);
-   let payload = payload.trim_matches(|character| character == '\r' || character == '\n' || character == '\0').trim();
+   let payload = payload
+    .trim_matches(|character| character == '\r' || character == '\n' || character == '\0')
+    .trim();
    if payload.is_empty() {
     continue;
    }
@@ -377,7 +377,7 @@ impl InputReceiver for IfacialMocapReceiver {
  }
 
  fn poll_frame(&mut self) -> Option<TrackingFrame> {
-    self.try_read_frames();
+  self.try_read_frames();
   self.buffered_frame.take()
  }
 
