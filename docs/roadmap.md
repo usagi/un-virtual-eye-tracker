@@ -31,6 +31,8 @@
 - [x] gamma-2 feat(map): add axis sensitivity and deadzone
 - [x] gamma-2 feat(map): add response curve presets
 - [x] gamma-3 feat(filter): add exponential smoothing
+- [x] gamma-4 feat(map): add head-eye blend presets
+- [ ] gamma-4 feat(config): add per-game mapping profiles
 
 ## Commit Unit Convention
 
