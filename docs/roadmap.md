@@ -39,7 +39,7 @@
 - [x] delta-3 feat(output-ets2): implement ets2/ats dedicated backend
 - [x] delta-3 feat(output-ets2): add truck sim response presets
 - [x] delta-3 test(output-ets2): add backend mapping tests
-- [ ] delta-4 feat(output): add backend abstraction layer
+- [x] delta-4 feat(output): add backend abstraction layer
 
 ## Commit Unit Convention
 

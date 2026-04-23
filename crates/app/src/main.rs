@@ -1,30 +1,17 @@
 use std::{env, path::PathBuf};
 
 use tracing::{info, warn};
-use unvet_config::{
- AppConfig,
- InputSource,
- MappingConfig,
- MappingBlendPreset,
- MappingCurvePreset,
- OutputBackendKind,
-};
+use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset};
 use unvet_core::{
  calibration::NeutralPoseCalibration,
  filter::OutputFrameSmoother,
  logging,
- mapping::{
-  HeadEyeBlendPreset,
-  map_angle_to_normalized,
-  mix_eye_and_head,
-  resolve_head_eye_mix,
-  AxisMappingSettings,
-  ResponseCurvePreset,
- },
+ mapping::{AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset, map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix},
  model::{OutputFrame, TrackingFrame},
- ports::{InputReceiver, OutputBackend},
+ ports::InputReceiver,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
+use unvet_output::OutputBackendLayer;
 
 fn default_config_path() -> PathBuf {
  PathBuf::from("config/unvet.toml")
@@ -37,11 +24,7 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFr
   MappingBlendPreset::EyeDominant => HeadEyeBlendPreset::EyeDominant,
   MappingBlendPreset::HeadDominant => HeadEyeBlendPreset::HeadDominant,
  };
- let (yaw_mix, pitch_mix) = resolve_head_eye_mix(
-  blend_preset,
-  mapping.eye_head_mix_yaw,
-  mapping.eye_head_mix_pitch,
- );
+ let (yaw_mix, pitch_mix) = resolve_head_eye_mix(blend_preset, mapping.eye_head_mix_yaw, mapping.eye_head_mix_pitch);
 
  let mixed_yaw = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, yaw_mix);
  let mixed_pitch = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, pitch_mix);
@@ -69,14 +52,6 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFr
   look_pitch_norm: map_angle_to_normalized(mixed_pitch, pitch_settings),
   confidence: frame.confidence,
   active: frame.active,
- }
-}
-
-fn select_backend(kind: OutputBackendKind) -> Box<dyn OutputBackend> {
- match kind {
-  OutputBackendKind::Ets2 => Box::new(unvet_output_ets2::Ets2Backend::default()),
-  OutputBackendKind::Mouse => Box::new(unvet_output_mouse::MouseBackend::default()),
-  OutputBackendKind::Keyboard => Box::new(unvet_output_keyboard::KeyboardBackend::default()),
  }
 }
 
@@ -113,8 +88,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  let active_mapping = config.effective_mapping();
  let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
 
- let mut backend = select_backend(config.output.backend);
- backend.set_enabled(config.output.enabled);
+ let mut output_layer = OutputBackendLayer::new(config.output.backend);
+ output_layer.set_enabled(config.output.enabled)?;
 
  receiver.ingest_mock_frame(TrackingFrame {
   timestamp_ms: 0,
@@ -143,8 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let calibrated_frame = calibration.apply(frame);
   let output_frame = build_output_frame(calibrated_frame, &active_mapping);
   let smoothed_output = frame_smoother.update(output_frame);
-  backend.apply(smoothed_output)?;
-  info!(backend = backend.backend_name(), "bootstrap output frame applied");
+  output_layer.apply(smoothed_output)?;
+  info!(backend = output_layer.active_backend_name()?, "bootstrap output frame applied");
  }
 
  info!(receiver = receiver.source_name(), "UNVET bootstrap complete");
