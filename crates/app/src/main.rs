@@ -1,11 +1,7 @@
 use std::{env, path::PathBuf};
 
 use tracing::{info, warn};
-use unvet_config::{
- AppConfig,
- InputSource,
- OutputBackendKind
-};
+use unvet_config::{AppConfig, InputSource, OutputBackendKind};
 use unvet_core::{
  calibration::NeutralPoseCalibration,
  logging,
@@ -91,16 +87,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  });
 
  if let Some(frame) = receiver.poll_frame() {
-    if config.calibration.enabled && config.calibration.capture_on_start && !config.calibration.calibrated && receiver.is_active() {
-     calibration.calibrate_from_frame(frame);
-     config.calibration.set_offsets(calibration.offsets());
-     config.calibration.capture_on_start = false;
-     config.save_to_path(&config_path)?;
-     info!(path = %config_path.display(), "neutral calibration captured and persisted");
-    }
+  if config.calibration.enabled && config.calibration.capture_on_start && !config.calibration.calibrated && receiver.is_active() {
+   calibration.calibrate_from_frame(frame);
+   config.calibration.set_offsets(calibration.offsets());
+   config.calibration.capture_on_start = false;
+   config.save_to_path(&config_path)?;
+   info!(path = %config_path.display(), "neutral calibration captured and persisted");
+  }
 
-    let calibrated_frame = calibration.apply(frame);
-    let output_frame = build_output_frame(calibrated_frame, &config);
+  let calibrated_frame = calibration.apply(frame);
+  let output_frame = build_output_frame(calibrated_frame, &config);
   backend.apply(output_frame)?;
   info!(backend = backend.backend_name(), "bootstrap output frame applied");
  }

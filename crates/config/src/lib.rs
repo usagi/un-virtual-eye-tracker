@@ -1,11 +1,7 @@
 use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
-use unvet_core::{
- calibration::CalibrationOffsets,
- AppError,
- AppResult
-};
+use unvet_core::{AppError, AppResult, calibration::CalibrationOffsets};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -122,7 +118,7 @@ pub struct CalibrationConfig {
  pub left_eye_yaw_offset_deg: f32,
  pub left_eye_pitch_offset_deg: f32,
  pub right_eye_yaw_offset_deg: f32,
- pub right_eye_pitch_offset_deg: f32
+ pub right_eye_pitch_offset_deg: f32,
 }
 
 impl Default for CalibrationConfig {
@@ -139,7 +135,7 @@ impl Default for CalibrationConfig {
    left_eye_yaw_offset_deg: 0.0,
    left_eye_pitch_offset_deg: 0.0,
    right_eye_yaw_offset_deg: 0.0,
-   right_eye_pitch_offset_deg: 0.0
+   right_eye_pitch_offset_deg: 0.0,
   }
  }
 }
@@ -159,7 +155,7 @@ impl CalibrationConfig {
    left_eye_yaw_offset_deg: self.left_eye_yaw_offset_deg,
    left_eye_pitch_offset_deg: self.left_eye_pitch_offset_deg,
    right_eye_yaw_offset_deg: self.right_eye_yaw_offset_deg,
-   right_eye_pitch_offset_deg: self.right_eye_pitch_offset_deg
+   right_eye_pitch_offset_deg: self.right_eye_pitch_offset_deg,
   })
  }
 
@@ -197,7 +193,7 @@ pub struct AppConfig {
  pub output: OutputConfig,
  pub mapping: MappingConfig,
  pub runtime: RuntimeConfig,
- pub calibration: CalibrationConfig
+ pub calibration: CalibrationConfig,
 }
 
 impl AppConfig {
