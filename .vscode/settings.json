@@ -1,0 +1,15 @@
+{
+ "files.watcherExclude": {
+  "**/target/**": true,
+  "**/.git/objects/**": true,
+  "**/.git/subtree-cache/**": true,
+  "**/.git/modules/**": true
+ },
+ "search.exclude": {
+  "**/target/**": true
+ },
+ "files.exclude": {
+  "**/target": true
+ },
+ "git.openRepositoryInParentFolders": "never"
+}
