@@ -1,6 +1,6 @@
 use crate::{
- AppResult,
  model::{OutputFrame, TrackingFrame},
+ AppResult,
 };
 
 pub trait InputReceiver: Send {

@@ -7,7 +7,7 @@ members = [
  "crates/output-ets2",
  "crates/output-mouse",
  "crates/output-keyboard",
- "crates/ui"
+ "crates/ui",
 ]
 resolver = "2"
 
