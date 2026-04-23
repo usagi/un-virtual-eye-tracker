@@ -41,6 +41,10 @@
 - [x] delta-3 test(output-ets2): add backend mapping tests
 - [x] delta-4 feat(output): add backend abstraction layer
 
+- [x] epsilon-1 feat(ui): scaffold tauri + svelte desktop shell
+- [x] epsilon-1 feat(ui): add runtime snapshot commands for UI polling
+- [x] epsilon-1 feat(ui): add minimal runtime control panel
+
 ## Commit Unit Convention
 
 - Prefix with phase id: `alpha-4`, `beta-1`, `gamma-2`
