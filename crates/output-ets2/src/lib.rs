@@ -1,8 +1,4 @@
-use unvet_core::{
- AppResult,
- model::OutputFrame,
- ports::OutputBackend,
-};
+use unvet_core::{AppResult, model::OutputFrame, ports::OutputBackend};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TruckSimCommand {
@@ -41,40 +37,40 @@ pub enum TruckSimPreset {
 
 impl Default for TruckSimResponse {
  fn default() -> Self {
-    Self::for_preset(TruckSimPreset::Ets2)
+  Self::for_preset(TruckSimPreset::Ets2)
  }
 }
 
 impl TruckSimResponse {
  pub fn for_preset(preset: TruckSimPreset) -> Self {
-    match preset {
-     TruckSimPreset::Ets2 => Self {
-        yaw_gain: 1.15,
-        pitch_gain: 0.9,
-        deadzone: 0.05,
-        yaw_exponent: 0.95,
-        pitch_exponent: 1.05,
-        look_back_threshold: 0.93,
-     },
-     TruckSimPreset::Ats => Self {
-        yaw_gain: 1.22,
-        pitch_gain: 0.94,
-        deadzone: 0.045,
-        yaw_exponent: 0.9,
-        pitch_exponent: 1.0,
-        look_back_threshold: 0.92,
-     },
-    }
+  match preset {
+   TruckSimPreset::Ets2 => Self {
+    yaw_gain: 1.15,
+    pitch_gain: 0.9,
+    deadzone: 0.05,
+    yaw_exponent: 0.95,
+    pitch_exponent: 1.05,
+    look_back_threshold: 0.93,
+   },
+   TruckSimPreset::Ats => Self {
+    yaw_gain: 1.22,
+    pitch_gain: 0.94,
+    deadzone: 0.045,
+    yaw_exponent: 0.9,
+    pitch_exponent: 1.0,
+    look_back_threshold: 0.92,
+   },
+  }
  }
 
  pub fn sanitized(self) -> Self {
   Self {
-     yaw_gain: self.yaw_gain.clamp(0.1, 3.0),
-     pitch_gain: self.pitch_gain.clamp(0.1, 3.0),
-     deadzone: self.deadzone.clamp(0.0, 0.95),
-     yaw_exponent: self.yaw_exponent.clamp(0.1, 3.0),
-     pitch_exponent: self.pitch_exponent.clamp(0.1, 3.0),
-     look_back_threshold: self.look_back_threshold.clamp(0.6, 0.99),
+   yaw_gain: self.yaw_gain.clamp(0.1, 3.0),
+   pitch_gain: self.pitch_gain.clamp(0.1, 3.0),
+   deadzone: self.deadzone.clamp(0.0, 0.95),
+   yaw_exponent: self.yaw_exponent.clamp(0.1, 3.0),
+   pitch_exponent: self.pitch_exponent.clamp(0.1, 3.0),
+   look_back_threshold: self.look_back_threshold.clamp(0.6, 0.99),
   }
  }
 }
@@ -130,8 +126,8 @@ impl Ets2Backend {
    response.pitch_exponent,
   );
 
-    let response = response.sanitized();
-    let threshold = response.look_back_threshold;
+  let response = response.sanitized();
+  let threshold = response.look_back_threshold;
   TruckSimCommand {
    camera_yaw,
    camera_pitch,

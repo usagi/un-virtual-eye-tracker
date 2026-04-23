@@ -130,7 +130,7 @@ impl Default for MappingConfig {
    yaw_sensitivity: 1.0,
    pitch_sensitivity: 1.0,
    response_curve_preset: MappingCurvePreset::default(),
-    head_eye_blend_preset: MappingBlendPreset::default(),
+   head_eye_blend_preset: MappingBlendPreset::default(),
    eye_head_mix_yaw: 0.7,
    eye_head_mix_pitch: 0.4,
   }
@@ -160,9 +160,9 @@ impl Default for MappingProfilesConfig {
   ats.deadzone_percent = 0.07;
 
   Self {
-    active: MappingProfile::default(),
-    ets2,
-    ats,
+   active: MappingProfile::default(),
+   ets2,
+   ats,
   }
  }
 }
@@ -170,9 +170,9 @@ impl Default for MappingProfilesConfig {
 impl MappingProfilesConfig {
  pub fn mapping_for(&self, profile: MappingProfile) -> Option<&MappingConfig> {
   match profile {
-    MappingProfile::Global => None,
-    MappingProfile::Ets2 => Some(&self.ets2),
-    MappingProfile::Ats => Some(&self.ats),
+   MappingProfile::Global => None,
+   MappingProfile::Ets2 => Some(&self.ets2),
+   MappingProfile::Ats => Some(&self.ats),
   }
  }
 }

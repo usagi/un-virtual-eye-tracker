@@ -1,11 +1,6 @@
 use std::mem::size_of;
 
-use unvet_core::{
- AppError,
- AppResult,
- model::OutputFrame,
- ports::OutputBackend,
-};
+use unvet_core::{AppError, AppResult, model::OutputFrame, ports::OutputBackend};
 
 const VK_A: u16 = 0x41;
 const VK_D: u16 = 0x44;
@@ -67,7 +62,7 @@ impl Default for KeyboardBackend {
    release_threshold: 0.2,
    x_state: AxisState::Neutral,
    y_state: AxisState::Neutral,
-    keybinds: Keybinds::default(),
+   keybinds: Keybinds::default(),
   }
  }
 }
@@ -139,14 +134,11 @@ impl KeyboardBackend {
   events
  }
 
- fn collect_events_for_axis(
-  events: &mut Vec<KeyEvent>,
-  previous: AxisState,
-  next: AxisState,
-  negative_key: u16,
-  positive_key: u16,
- ) {
-  for event in Self::transition_events(previous, next, negative_key, positive_key).into_iter().flatten() {
+ fn collect_events_for_axis(events: &mut Vec<KeyEvent>, previous: AxisState, next: AxisState, negative_key: u16, positive_key: u16) {
+  for event in Self::transition_events(previous, next, negative_key, positive_key)
+   .into_iter()
+   .flatten()
+  {
    events.push(event);
   }
  }
@@ -160,13 +152,7 @@ impl KeyboardBackend {
    self.keybinds.left,
    self.keybinds.right,
   );
-  Self::collect_events_for_axis(
-   &mut events,
-   self.y_state,
-   AxisState::Neutral,
-   self.keybinds.up,
-   self.keybinds.down,
-  );
+  Self::collect_events_for_axis(&mut events, self.y_state, AxisState::Neutral, self.keybinds.up, self.keybinds.down);
   events
  }
 
@@ -184,20 +170,8 @@ impl KeyboardBackend {
    AxisState::Neutral
   };
 
-  Self::collect_events_for_axis(
-   &mut events,
-   self.x_state,
-   next_x,
-   self.keybinds.left,
-   self.keybinds.right,
-  );
-  Self::collect_events_for_axis(
-   &mut events,
-   self.y_state,
-   next_y,
-   self.keybinds.up,
-   self.keybinds.down,
-  );
+  Self::collect_events_for_axis(&mut events, self.x_state, next_x, self.keybinds.left, self.keybinds.right);
+  Self::collect_events_for_axis(&mut events, self.y_state, next_y, self.keybinds.up, self.keybinds.down);
 
   (next_x, next_y, events)
  }
@@ -280,9 +254,7 @@ fn send_key_event_platform(virtual_key: u16, kind: KeyEventKind) -> AppResult<()
   },
  };
 
- let wrote = unsafe {
-  SendInput(1, &input as *const Input, size_of::<Input>() as i32)
- };
+ let wrote = unsafe { SendInput(1, &input as *const Input, size_of::<Input>() as i32) };
  if wrote != 1 {
   return Err(AppError::InvalidState("failed to send keyboard input".to_owned()));
  }
@@ -297,16 +269,7 @@ fn send_key_event_platform(_virtual_key: u16, _kind: KeyEventKind) -> AppResult<
 
 #[cfg(test)]
 mod tests {
- use super::{
-  AxisState,
-  KeyEvent,
-  KeyEventKind,
-  KeyboardBackend,
-  VK_A,
-  VK_D,
-  VK_W,
-  VK_S,
- };
+ use super::{AxisState, KeyEvent, KeyEventKind, KeyboardBackend, VK_A, VK_D, VK_S, VK_W};
  use unvet_core::model::OutputFrame;
 
  #[test]
