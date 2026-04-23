@@ -5,6 +5,11 @@ use unvet_config::{AppConfig, InputSource, OutputBackendKind};
 use unvet_core::{
  calibration::NeutralPoseCalibration,
  logging,
+ mapping::{
+  map_angle_to_normalized,
+  mix_eye_and_head,
+  AxisMappingSettings,
+ },
  model::{OutputFrame, TrackingFrame},
  ports::{InputReceiver, OutputBackend},
 };
@@ -18,12 +23,23 @@ fn build_output_frame(frame: TrackingFrame, config: &AppConfig) -> OutputFrame {
  let yaw_mix = config.mapping.eye_head_mix_yaw;
  let pitch_mix = config.mapping.eye_head_mix_pitch;
 
- let mixed_yaw = yaw_mix * frame.eye_yaw_deg + (1.0 - yaw_mix) * frame.head_yaw_deg;
- let mixed_pitch = pitch_mix * frame.eye_pitch_deg + (1.0 - pitch_mix) * frame.head_pitch_deg;
+ let mixed_yaw = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, yaw_mix);
+ let mixed_pitch = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, pitch_mix);
+
+ let yaw_settings = AxisMappingSettings {
+    sensitivity: config.mapping.yaw_sensitivity,
+    deadzone: config.mapping.deadzone_percent,
+    max_input_angle_deg: 35.0,
+ };
+ let pitch_settings = AxisMappingSettings {
+    sensitivity: config.mapping.pitch_sensitivity,
+    deadzone: config.mapping.deadzone_percent,
+    max_input_angle_deg: 25.0,
+ };
 
  OutputFrame {
-  look_yaw_norm: (mixed_yaw / 35.0).clamp(-1.0, 1.0),
-  look_pitch_norm: (mixed_pitch / 25.0).clamp(-1.0, 1.0),
+    look_yaw_norm: map_angle_to_normalized(mixed_yaw, yaw_settings),
+    look_pitch_norm: map_angle_to_normalized(mixed_pitch, pitch_settings),
   confidence: frame.confidence,
   active: frame.active,
  }

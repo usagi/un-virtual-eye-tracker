@@ -71,6 +71,8 @@ impl Default for OutputConfig {
 pub struct MappingConfig {
  pub smoothing_alpha: f32,
  pub deadzone_percent: f32,
+ pub yaw_sensitivity: f32,
+ pub pitch_sensitivity: f32,
  pub eye_head_mix_yaw: f32,
  pub eye_head_mix_pitch: f32,
 }
@@ -80,6 +82,8 @@ impl Default for MappingConfig {
   Self {
    smoothing_alpha: 0.18,
    deadzone_percent: 0.06,
+    yaw_sensitivity: 1.0,
+    pitch_sensitivity: 1.0,
    eye_head_mix_yaw: 0.7,
    eye_head_mix_pitch: 0.4,
   }
