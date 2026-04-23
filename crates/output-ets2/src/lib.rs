@@ -181,3 +181,97 @@ fn dispatch_command_platform(command: TruckSimCommand) -> AppResult<()> {
  let _ = command;
  Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+ use super::{Ets2Backend, TruckSimCommand, TruckSimPreset, TruckSimResponse};
+ use unvet_core::model::OutputFrame;
+
+ #[test]
+ fn truck_sim_presets_are_distinct() {
+  let ets2 = TruckSimResponse::for_preset(TruckSimPreset::Ets2);
+  let ats = TruckSimResponse::for_preset(TruckSimPreset::Ats);
+
+  assert_ne!(ets2, ats);
+  assert!(ats.yaw_gain > ets2.yaw_gain);
+ }
+
+ #[test]
+ fn frame_to_command_returns_neutral_when_inactive() {
+  let command = Ets2Backend::frame_to_command(
+   OutputFrame {
+    look_yaw_norm: 1.0,
+    look_pitch_norm: -1.0,
+    confidence: 1.0,
+    active: false,
+   },
+   TruckSimResponse::default(),
+  );
+
+  assert_eq!(command, TruckSimCommand::neutral());
+ }
+
+ #[test]
+ fn frame_to_command_sets_look_back_flags() {
+  let response = TruckSimResponse {
+   yaw_gain: 1.0,
+   pitch_gain: 1.0,
+   deadzone: 0.0,
+   yaw_exponent: 1.0,
+   pitch_exponent: 1.0,
+   look_back_threshold: 0.8,
+  };
+  let right = Ets2Backend::frame_to_command(
+   OutputFrame {
+    look_yaw_norm: 1.0,
+    look_pitch_norm: 0.0,
+    confidence: 1.0,
+    active: true,
+   },
+   response,
+  );
+  let left = Ets2Backend::frame_to_command(
+   OutputFrame {
+    look_yaw_norm: -1.0,
+    look_pitch_norm: 0.0,
+    confidence: 1.0,
+    active: true,
+   },
+   response,
+  );
+
+  assert!(right.look_back_right);
+  assert!(!right.look_back_left);
+  assert!(left.look_back_left);
+  assert!(!left.look_back_right);
+ }
+
+ #[test]
+ fn map_axis_respects_deadzone_and_clamp() {
+  let in_deadzone = Ets2Backend::map_axis(0.03, 1.0, 0.05, 1.0);
+  let clamped = Ets2Backend::map_axis(2.0, 3.0, 0.0, 1.0);
+
+  assert_eq!(in_deadzone, 0.0);
+  assert_eq!(clamped, 1.0);
+ }
+
+ #[test]
+ fn set_response_sanitizes_values() {
+  let mut backend = Ets2Backend::default();
+  backend.set_response(TruckSimResponse {
+   yaw_gain: 9.0,
+   pitch_gain: -1.0,
+   deadzone: 2.0,
+   yaw_exponent: 0.01,
+   pitch_exponent: 8.0,
+   look_back_threshold: 0.1,
+  });
+
+  assert_eq!(backend.response.yaw_gain, 3.0);
+  assert_eq!(backend.response.pitch_gain, 0.1);
+  assert_eq!(backend.response.deadzone, 0.95);
+  assert_eq!(backend.response.yaw_exponent, 0.1);
+  assert_eq!(backend.response.pitch_exponent, 3.0);
+  assert_eq!(backend.response.look_back_threshold, 0.6);
+ }
+}
