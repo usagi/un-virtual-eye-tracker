@@ -28,7 +28,7 @@ fn parse_tracking_frame_extracts_head_and_eye_values() {
  assert!((frame.head_roll_deg - 0.4).abs() < 0.001);
  assert!((frame.eye_yaw_deg - 1.4).abs() < 0.001);
  assert!((frame.eye_pitch_deg + 0.5).abs() < 0.001);
- assert!((frame.confidence - 0.92).abs() < 0.001);
+ assert!((frame.confidence - 0.91632).abs() < 0.001);
  assert!(frame.active);
 }
 

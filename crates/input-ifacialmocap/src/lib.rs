@@ -4,7 +4,12 @@ use std::{
  time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use unvet_core::{model::TrackingFrame, ports::InputReceiver, AppError, AppResult};
+use unvet_core::{
+ model::{RawTrackingFrame, TrackingFrame},
+ ports::InputReceiver,
+ AppError,
+ AppResult,
+};
 
 pub const IFACIALMOCAP_UDP_PORT: u16 = 49983;
 pub const IFACIALMOCAP_TCP_PORT: u16 = 49986;
@@ -420,23 +425,20 @@ pub fn parse_tracking_frame(packet: &str, timestamp_ms: u64) -> AppResult<Tracki
  let (right_eye_yaw_deg, right_eye_pitch_deg, _) =
   right_eye.ok_or_else(|| AppError::InvalidData("rightEye field is missing".to_owned()))?;
 
- let eye_yaw_deg = (left_eye_yaw_deg + right_eye_yaw_deg) * 0.5;
- let eye_pitch_deg = (left_eye_pitch_deg + right_eye_pitch_deg) * 0.5;
-
- Ok(TrackingFrame {
+ Ok(TrackingFrame::from_raw(RawTrackingFrame {
   timestamp_ms,
   head_yaw_deg,
   head_pitch_deg,
   head_roll_deg,
-  eye_yaw_deg,
-  eye_pitch_deg,
-  left_eye_yaw_deg,
-  left_eye_pitch_deg,
-  right_eye_yaw_deg,
-  right_eye_pitch_deg,
-  confidence,
-  active: confidence > 0.2,
- })
+  eye_yaw_deg: None,
+  eye_pitch_deg: None,
+  left_eye_yaw_deg: Some(left_eye_yaw_deg),
+  left_eye_pitch_deg: Some(left_eye_pitch_deg),
+  right_eye_yaw_deg: Some(right_eye_yaw_deg),
+  right_eye_pitch_deg: Some(right_eye_pitch_deg),
+  reported_confidence: Some(confidence),
+  reported_active: Some(confidence > 0.2),
+ }))
 }
 
 fn parse_triplet(raw: &str) -> AppResult<(f32, f32, f32)> {
