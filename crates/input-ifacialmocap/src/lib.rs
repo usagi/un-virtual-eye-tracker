@@ -56,6 +56,16 @@ pub struct IfacialMocapReceiver {
  buffered_frame: Option<TrackingFrame>,
  socket: Option<UdpSocket>,
  receive_buffer: [u8; 8192],
+ stats: ReceiverStats,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ReceiverStats {
+ pub udp_packets_received: u64,
+ pub frames_parsed: u64,
+ pub frames_dropped: u64,
+ pub last_packet_timestamp_ms: Option<u64>,
+ pub last_error: Option<String>,
 }
 
 impl IfacialMocapReceiver {
@@ -65,8 +75,9 @@ impl IfacialMocapReceiver {
    state: ConnectionState::Disconnected,
    active: false,
    buffered_frame: None,
-    socket: None,
-    receive_buffer: [0; 8192],
+   socket: None,
+   receive_buffer: [0; 8192],
+   stats: ReceiverStats::default(),
   }
  }
 
@@ -80,30 +91,49 @@ impl IfacialMocapReceiver {
 
  pub fn connect(&mut self) -> AppResult<()> {
   if self.options.use_tcp {
-   self.state = ConnectionState::Error;
-   self.active = false;
-   return Err(AppError::InvalidState("TCP mode is not implemented yet".to_owned()));
+  let error = AppError::InvalidState("TCP mode is not implemented yet".to_owned());
+  self.record_error(error.to_string());
+  return Err(error);
   }
 
   self.state = ConnectionState::Connecting;
 
   let bind_address = format!("0.0.0.0:{}", self.options.udp_port);
-  let socket = UdpSocket::bind(&bind_address)?;
+  let socket = match UdpSocket::bind(&bind_address) {
+  Ok(socket) => socket,
+  Err(error) => {
+   self.record_error(format!("failed to bind UDP socket on {bind_address}: {error}"));
+   return Err(AppError::from(error));
+  }
+  };
   socket.set_nonblocking(true)?;
   socket.set_read_timeout(Some(Duration::from_millis(1)))?;
 
-  let mut destination_candidates = format!("{}:{}", self.options.host, self.options.udp_port)
-   .to_socket_addrs()
-   .map_err(|error| AppError::InvalidState(format!("invalid UDP host '{}': {error}", self.options.host)))?;
-  let destination = destination_candidates
-   .next()
-   .ok_or_else(|| AppError::InvalidState(format!("no UDP destination could be resolved for '{}:{}'", self.options.host, self.options.udp_port)))?;
+  let mut destination_candidates = match format!("{}:{}", self.options.host, self.options.udp_port).to_socket_addrs() {
+  Ok(candidates) => candidates,
+  Err(error) => {
+   self.record_error(format!("invalid UDP host '{}': {error}", self.options.host));
+   return Err(AppError::InvalidState(format!("invalid UDP host '{}': {error}", self.options.host)));
+  }
+  };
+  let destination = match destination_candidates.next() {
+  Some(destination) => destination,
+  None => {
+   let message = format!("no UDP destination could be resolved for '{}:{}'", self.options.host, self.options.udp_port);
+   self.record_error(message.clone());
+   return Err(AppError::InvalidState(message));
+  }
+  };
 
-  socket.send_to(self.options.start_command.as_bytes(), destination)?;
+  if let Err(error) = socket.send_to(self.options.start_command.as_bytes(), destination) {
+  self.record_error(format!("failed to send start command to {destination}: {error}"));
+  return Err(AppError::from(error));
+  }
 
   self.socket = Some(socket);
   self.state = ConnectionState::Receiving;
   self.active = true;
+  self.stats.last_error = None;
   Ok(())
  }
 
@@ -114,6 +144,21 @@ impl IfacialMocapReceiver {
   self.socket = None;
  }
 
+ pub fn stats(&self) -> &ReceiverStats {
+  &self.stats
+ }
+
+ pub fn clear_error(&mut self) {
+  self.stats.last_error = None;
+  if self.socket.is_some() {
+   self.state = ConnectionState::Receiving;
+   self.active = true;
+  } else {
+   self.state = ConnectionState::Disconnected;
+   self.active = false;
+  }
+ }
+
  pub fn ingest_mock_frame(&mut self, frame: TrackingFrame) {
   self.buffered_frame = Some(frame);
  }
@@ -121,16 +166,26 @@ impl IfacialMocapReceiver {
  fn try_read_udp_frames(&mut self) {
   let mut latest = None;
 
-  let Some(socket) = self.socket.as_ref() else {
+  let Some(socket) = self.socket.as_ref().and_then(|socket| socket.try_clone().ok()) else {
    return;
   };
 
   loop {
    match socket.recv_from(&mut self.receive_buffer) {
     Ok((size, _source)) => {
+     self.stats.udp_packets_received += 1;
+     self.stats.last_packet_timestamp_ms = Some(now_millis());
+
      let packet = String::from_utf8_lossy(&self.receive_buffer[..size]);
-     if let Ok(frame) = parse_tracking_frame(&packet, now_millis()) {
-      latest = Some(frame);
+     match parse_tracking_frame(&packet, now_millis()) {
+      Ok(frame) => {
+       self.stats.frames_parsed += 1;
+       latest = Some(frame);
+      }
+      Err(error) => {
+       self.stats.frames_dropped += 1;
+       self.stats.last_error = Some(error.to_string());
+      }
      }
     }
     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -139,9 +194,9 @@ impl IfacialMocapReceiver {
     Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
      break;
     }
-    Err(_error) => {
-     self.state = ConnectionState::Error;
-     self.active = false;
+    Err(error) => {
+     self.stats.frames_dropped += 1;
+     self.record_error(format!("UDP receive failed: {error}"));
      break;
     }
    }
@@ -150,8 +205,15 @@ impl IfacialMocapReceiver {
   if latest.is_some() {
    self.state = ConnectionState::Receiving;
    self.active = true;
+   self.stats.last_error = None;
    self.buffered_frame = latest;
   }
+ }
+
+ fn record_error(&mut self, message: String) {
+  self.state = ConnectionState::Error;
+  self.active = false;
+  self.stats.last_error = Some(message);
  }
 }
 
