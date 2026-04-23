@@ -7,6 +7,7 @@ use unvet_config::{
  OutputBackendKind
 };
 use unvet_core::{
+ calibration::NeutralPoseCalibration,
  logging,
  model::{OutputFrame, TrackingFrame},
  ports::{InputReceiver, OutputBackend},
@@ -40,11 +41,18 @@ fn select_backend(kind: OutputBackendKind) -> Box<dyn OutputBackend> {
  }
 }
 
+fn build_calibration(config: &AppConfig) -> NeutralPoseCalibration {
+ match config.calibration.offsets() {
+  Some(offsets) => NeutralPoseCalibration::from_offsets(config.calibration.enabled, offsets),
+  None => NeutralPoseCalibration::new(config.calibration.enabled),
+ }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
  logging::init_logging("info");
 
  let config_path = env::args_os().nth(1).map(PathBuf::from).unwrap_or_else(default_config_path);
- let config = AppConfig::load_or_default(&config_path)?;
+ let mut config = AppConfig::load_or_default(&config_path)?;
 
  if !config_path.exists() {
   config.save_to_path(&config_path)?;
@@ -61,6 +69,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  if let Err(error) = receiver.connect() {
   warn!(error = %error, "input receiver startup failed; running with fallback frame for bootstrap");
  }
+
+ let mut calibration = build_calibration(&config);
 
  let mut backend = select_backend(config.output.backend);
  backend.set_enabled(config.output.enabled);
@@ -81,7 +91,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  });
 
  if let Some(frame) = receiver.poll_frame() {
-  let output_frame = build_output_frame(frame, &config);
+    if config.calibration.enabled && config.calibration.capture_on_start && !config.calibration.calibrated && receiver.is_active() {
+     calibration.calibrate_from_frame(frame);
+     config.calibration.set_offsets(calibration.offsets());
+     config.calibration.capture_on_start = false;
+     config.save_to_path(&config_path)?;
+     info!(path = %config_path.display(), "neutral calibration captured and persisted");
+    }
+
+    let calibrated_frame = calibration.apply(frame);
+    let output_frame = build_output_frame(calibrated_frame, &config);
   backend.apply(output_frame)?;
   info!(backend = backend.backend_name(), "bootstrap output frame applied");
  }

@@ -1,7 +1,11 @@
 use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
-use unvet_core::{AppError, AppResult};
+use unvet_core::{
+ calibration::CalibrationOffsets,
+ AppError,
+ AppResult
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -104,6 +108,88 @@ impl Default for RuntimeConfig {
  }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CalibrationConfig {
+ pub enabled: bool,
+ pub capture_on_start: bool,
+ pub calibrated: bool,
+ pub head_yaw_offset_deg: f32,
+ pub head_pitch_offset_deg: f32,
+ pub head_roll_offset_deg: f32,
+ pub eye_yaw_offset_deg: f32,
+ pub eye_pitch_offset_deg: f32,
+ pub left_eye_yaw_offset_deg: f32,
+ pub left_eye_pitch_offset_deg: f32,
+ pub right_eye_yaw_offset_deg: f32,
+ pub right_eye_pitch_offset_deg: f32
+}
+
+impl Default for CalibrationConfig {
+ fn default() -> Self {
+  Self {
+   enabled: true,
+   capture_on_start: false,
+   calibrated: false,
+   head_yaw_offset_deg: 0.0,
+   head_pitch_offset_deg: 0.0,
+   head_roll_offset_deg: 0.0,
+   eye_yaw_offset_deg: 0.0,
+   eye_pitch_offset_deg: 0.0,
+   left_eye_yaw_offset_deg: 0.0,
+   left_eye_pitch_offset_deg: 0.0,
+   right_eye_yaw_offset_deg: 0.0,
+   right_eye_pitch_offset_deg: 0.0
+  }
+ }
+}
+
+impl CalibrationConfig {
+ pub fn offsets(&self) -> Option<CalibrationOffsets> {
+  if !self.calibrated {
+   return None;
+  }
+
+  Some(CalibrationOffsets {
+   head_yaw_offset_deg: self.head_yaw_offset_deg,
+   head_pitch_offset_deg: self.head_pitch_offset_deg,
+   head_roll_offset_deg: self.head_roll_offset_deg,
+   eye_yaw_offset_deg: self.eye_yaw_offset_deg,
+   eye_pitch_offset_deg: self.eye_pitch_offset_deg,
+   left_eye_yaw_offset_deg: self.left_eye_yaw_offset_deg,
+   left_eye_pitch_offset_deg: self.left_eye_pitch_offset_deg,
+   right_eye_yaw_offset_deg: self.right_eye_yaw_offset_deg,
+   right_eye_pitch_offset_deg: self.right_eye_pitch_offset_deg
+  })
+ }
+
+ pub fn set_offsets(&mut self, offsets: CalibrationOffsets) {
+  self.calibrated = true;
+  self.head_yaw_offset_deg = offsets.head_yaw_offset_deg;
+  self.head_pitch_offset_deg = offsets.head_pitch_offset_deg;
+  self.head_roll_offset_deg = offsets.head_roll_offset_deg;
+  self.eye_yaw_offset_deg = offsets.eye_yaw_offset_deg;
+  self.eye_pitch_offset_deg = offsets.eye_pitch_offset_deg;
+  self.left_eye_yaw_offset_deg = offsets.left_eye_yaw_offset_deg;
+  self.left_eye_pitch_offset_deg = offsets.left_eye_pitch_offset_deg;
+  self.right_eye_yaw_offset_deg = offsets.right_eye_yaw_offset_deg;
+  self.right_eye_pitch_offset_deg = offsets.right_eye_pitch_offset_deg;
+ }
+
+ pub fn clear_offsets(&mut self) {
+  self.calibrated = false;
+  self.head_yaw_offset_deg = 0.0;
+  self.head_pitch_offset_deg = 0.0;
+  self.head_roll_offset_deg = 0.0;
+  self.eye_yaw_offset_deg = 0.0;
+  self.eye_pitch_offset_deg = 0.0;
+  self.left_eye_yaw_offset_deg = 0.0;
+  self.left_eye_pitch_offset_deg = 0.0;
+  self.right_eye_yaw_offset_deg = 0.0;
+  self.right_eye_pitch_offset_deg = 0.0;
+ }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct AppConfig {
@@ -111,6 +197,7 @@ pub struct AppConfig {
  pub output: OutputConfig,
  pub mapping: MappingConfig,
  pub runtime: RuntimeConfig,
+ pub calibration: CalibrationConfig
 }
 
 impl AppConfig {
@@ -143,6 +230,7 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
  use super::*;
+ use unvet_core::calibration::CalibrationOffsets;
 
  #[test]
  fn default_config_roundtrip() {
@@ -150,5 +238,24 @@ mod tests {
   let parsed = AppConfig::from_toml(&source).expect("parse serialized config");
 
   assert_eq!(parsed, AppConfig::default());
+ }
+
+ #[test]
+ fn calibration_offsets_can_roundtrip() {
+  let mut calibration = CalibrationConfig::default();
+  assert!(calibration.offsets().is_none());
+
+  calibration.set_offsets(CalibrationOffsets {
+   head_yaw_offset_deg: 1.2,
+   head_pitch_offset_deg: -0.8,
+   ..CalibrationOffsets::default()
+  });
+
+  let offsets = calibration.offsets().expect("offsets should be available after set");
+  assert!((offsets.head_yaw_offset_deg - 1.2).abs() < 0.001);
+  assert!((offsets.head_pitch_offset_deg + 0.8).abs() < 0.001);
+
+  calibration.clear_offsets();
+  assert!(calibration.offsets().is_none());
  }
 }
