@@ -4,6 +4,7 @@ use tracing::{info, warn};
 use unvet_config::{
  AppConfig,
  InputSource,
+ MappingConfig,
  MappingBlendPreset,
  MappingCurvePreset,
  OutputBackendKind,
@@ -29,8 +30,8 @@ fn default_config_path() -> PathBuf {
  PathBuf::from("config/unvet.toml")
 }
 
-fn build_output_frame(frame: TrackingFrame, config: &AppConfig) -> OutputFrame {
- let blend_preset = match config.mapping.head_eye_blend_preset {
+fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFrame {
+ let blend_preset = match mapping.head_eye_blend_preset {
   MappingBlendPreset::Custom => HeadEyeBlendPreset::Custom,
   MappingBlendPreset::Balanced => HeadEyeBlendPreset::Balanced,
   MappingBlendPreset::EyeDominant => HeadEyeBlendPreset::EyeDominant,
@@ -38,34 +39,34 @@ fn build_output_frame(frame: TrackingFrame, config: &AppConfig) -> OutputFrame {
  };
  let (yaw_mix, pitch_mix) = resolve_head_eye_mix(
   blend_preset,
-  config.mapping.eye_head_mix_yaw,
-  config.mapping.eye_head_mix_pitch,
+  mapping.eye_head_mix_yaw,
+  mapping.eye_head_mix_pitch,
  );
 
  let mixed_yaw = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, yaw_mix);
  let mixed_pitch = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, pitch_mix);
- let response_curve = match config.mapping.response_curve_preset {
+ let response_curve = match mapping.response_curve_preset {
   MappingCurvePreset::Linear => ResponseCurvePreset::Linear,
   MappingCurvePreset::Smooth => ResponseCurvePreset::Smooth,
   MappingCurvePreset::Aggressive => ResponseCurvePreset::Aggressive,
  };
 
  let yaw_settings = AxisMappingSettings {
-    sensitivity: config.mapping.yaw_sensitivity,
-    deadzone: config.mapping.deadzone_percent,
-    max_input_angle_deg: 35.0,
+  sensitivity: mapping.yaw_sensitivity,
+  deadzone: mapping.deadzone_percent,
+  max_input_angle_deg: 35.0,
   response_curve,
  };
  let pitch_settings = AxisMappingSettings {
-    sensitivity: config.mapping.pitch_sensitivity,
-    deadzone: config.mapping.deadzone_percent,
-    max_input_angle_deg: 25.0,
+  sensitivity: mapping.pitch_sensitivity,
+  deadzone: mapping.deadzone_percent,
+  max_input_angle_deg: 25.0,
   response_curve,
  };
 
  OutputFrame {
-    look_yaw_norm: map_angle_to_normalized(mixed_yaw, yaw_settings),
-    look_pitch_norm: map_angle_to_normalized(mixed_pitch, pitch_settings),
+  look_yaw_norm: map_angle_to_normalized(mixed_yaw, yaw_settings),
+  look_pitch_norm: map_angle_to_normalized(mixed_pitch, pitch_settings),
   confidence: frame.confidence,
   active: frame.active,
  }
@@ -109,7 +110,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  }
 
  let mut calibration = build_calibration(&config);
- let mut frame_smoother = OutputFrameSmoother::new(config.mapping.smoothing_alpha);
+ let active_mapping = config.effective_mapping();
+ let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
 
  let mut backend = select_backend(config.output.backend);
  backend.set_enabled(config.output.enabled);
@@ -139,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
 
   let calibrated_frame = calibration.apply(frame);
-  let output_frame = build_output_frame(calibrated_frame, &config);
+  let output_frame = build_output_frame(calibrated_frame, &active_mapping);
   let smoothed_output = frame_smoother.update(output_frame);
   backend.apply(smoothed_output)?;
   info!(backend = backend.backend_name(), "bootstrap output frame applied");

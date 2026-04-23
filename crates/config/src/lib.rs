@@ -59,6 +59,20 @@ impl Default for MappingBlendPreset {
  }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MappingProfile {
+ Global,
+ Ets2,
+ Ats,
+}
+
+impl Default for MappingProfile {
+ fn default() -> Self {
+  Self::Global
+ }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct InputConfig {
@@ -119,6 +133,46 @@ impl Default for MappingConfig {
     head_eye_blend_preset: MappingBlendPreset::default(),
    eye_head_mix_yaw: 0.7,
    eye_head_mix_pitch: 0.4,
+  }
+ }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MappingProfilesConfig {
+ pub active: MappingProfile,
+ pub ets2: MappingConfig,
+ pub ats: MappingConfig,
+}
+
+impl Default for MappingProfilesConfig {
+ fn default() -> Self {
+  let mut ets2 = MappingConfig::default();
+  ets2.head_eye_blend_preset = MappingBlendPreset::Balanced;
+  ets2.eye_head_mix_yaw = 0.72;
+  ets2.eye_head_mix_pitch = 0.45;
+
+  let mut ats = MappingConfig::default();
+  ats.head_eye_blend_preset = MappingBlendPreset::Balanced;
+  ats.eye_head_mix_yaw = 0.68;
+  ats.eye_head_mix_pitch = 0.42;
+  ats.smoothing_alpha = 0.2;
+  ats.deadzone_percent = 0.07;
+
+  Self {
+    active: MappingProfile::default(),
+    ets2,
+    ats,
+  }
+ }
+}
+
+impl MappingProfilesConfig {
+ pub fn mapping_for(&self, profile: MappingProfile) -> Option<&MappingConfig> {
+  match profile {
+    MappingProfile::Global => None,
+    MappingProfile::Ets2 => Some(&self.ets2),
+    MappingProfile::Ats => Some(&self.ats),
   }
  }
 }
@@ -229,6 +283,7 @@ pub struct AppConfig {
  pub input: InputConfig,
  pub output: OutputConfig,
  pub mapping: MappingConfig,
+ pub mapping_profiles: MappingProfilesConfig,
  pub runtime: RuntimeConfig,
  pub calibration: CalibrationConfig,
 }
@@ -257,6 +312,13 @@ impl AppConfig {
   let content = toml::to_string_pretty(self).map_err(|err| AppError::Config(format!("failed to serialize config: {err}")))?;
   fs::write(path, content)?;
   Ok(())
+ }
+
+ pub fn effective_mapping(&self) -> MappingConfig {
+  match self.mapping_profiles.mapping_for(self.mapping_profiles.active) {
+   Some(profile_mapping) => profile_mapping.clone(),
+   None => self.mapping.clone(),
+  }
  }
 }
 
@@ -290,5 +352,25 @@ mod tests {
 
   calibration.clear_offsets();
   assert!(calibration.offsets().is_none());
+ }
+
+ #[test]
+ fn effective_mapping_uses_global_by_default() {
+  let mut config = AppConfig::default();
+  config.mapping.yaw_sensitivity = 1.4;
+
+  let effective = config.effective_mapping();
+  assert!((effective.yaw_sensitivity - 1.4).abs() < 0.001);
+ }
+
+ #[test]
+ fn effective_mapping_can_select_per_game_profile() {
+  let mut config = AppConfig::default();
+  config.mapping.yaw_sensitivity = 0.5;
+  config.mapping_profiles.active = MappingProfile::Ets2;
+  config.mapping_profiles.ets2.yaw_sensitivity = 1.7;
+
+  let effective = config.effective_mapping();
+  assert!((effective.yaw_sensitivity - 1.7).abs() < 0.001);
  }
 }
