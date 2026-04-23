@@ -9,6 +9,7 @@ use unvet_config::{
 };
 use unvet_core::{
  calibration::NeutralPoseCalibration,
+ filter::OutputFrameSmoother,
  logging,
  mapping::{
   map_angle_to_normalized,
@@ -96,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  }
 
  let mut calibration = build_calibration(&config);
+ let mut frame_smoother = OutputFrameSmoother::new(config.mapping.smoothing_alpha);
 
  let mut backend = select_backend(config.output.backend);
  backend.set_enabled(config.output.enabled);
@@ -126,7 +128,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   let calibrated_frame = calibration.apply(frame);
   let output_frame = build_output_frame(calibrated_frame, &config);
-  backend.apply(output_frame)?;
+  let smoothed_output = frame_smoother.update(output_frame);
+  backend.apply(smoothed_output)?;
   info!(backend = backend.backend_name(), "bootstrap output frame applied");
  }
 

@@ -1,5 +1,6 @@
 pub mod calibration;
 pub mod error;
+pub mod filter;
 pub mod logging;
 pub mod mapping;
 pub mod model;
