@@ -1,19 +1,17 @@
 use std::{env, path::PathBuf};
 
-use tracing::{
- info,
- warn
+use tracing::{info, warn};
+use unvet_config::{
+ AppConfig,
+ InputSource,
+ OutputBackendKind
 };
-use unvet_config::{AppConfig, OutputBackendKind};
 use unvet_core::{
  logging,
  model::{OutputFrame, TrackingFrame},
  ports::{InputReceiver, OutputBackend},
 };
-use unvet_input_ifacialmocap::{
- IfacialMocapReceiver,
- ReceiverOptions
-};
+use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
 
 fn default_config_path() -> PathBuf {
  PathBuf::from("config/unvet.toml")
@@ -57,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  receiver_options.host = config.input.host.clone();
  receiver_options.udp_port = config.input.udp_port;
  receiver_options.tcp_port = config.input.tcp_port;
+ receiver_options.use_tcp = matches!(config.input.source, InputSource::IfacialmocapTcp);
 
  let mut receiver = IfacialMocapReceiver::new(receiver_options);
  if let Err(error) = receiver.connect() {
