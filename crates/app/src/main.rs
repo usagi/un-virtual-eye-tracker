@@ -1,13 +1,19 @@
 use std::{env, path::PathBuf};
 
-use tracing::info;
+use tracing::{
+ info,
+ warn
+};
 use unvet_config::{AppConfig, OutputBackendKind};
 use unvet_core::{
  logging,
  model::{OutputFrame, TrackingFrame},
  ports::{InputReceiver, OutputBackend},
 };
-use unvet_input_ifacialmocap::IfacialMocapReceiver;
+use unvet_input_ifacialmocap::{
+ IfacialMocapReceiver,
+ ReceiverOptions
+};
 
 fn default_config_path() -> PathBuf {
  PathBuf::from("config/unvet.toml")
@@ -47,8 +53,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   info!(path = %config_path.display(), "default config generated");
  }
 
- let mut receiver = IfacialMocapReceiver::new(Default::default());
- receiver.connect();
+ let mut receiver_options = ReceiverOptions::default();
+ receiver_options.host = config.input.host.clone();
+ receiver_options.udp_port = config.input.udp_port;
+ receiver_options.tcp_port = config.input.tcp_port;
+
+ let mut receiver = IfacialMocapReceiver::new(receiver_options);
+ if let Err(error) = receiver.connect() {
+  warn!(error = %error, "input receiver startup failed; running with fallback frame for bootstrap");
+ }
 
  let mut backend = select_backend(config.output.backend);
  backend.set_enabled(config.output.enabled);
