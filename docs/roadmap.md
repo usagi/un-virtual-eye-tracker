@@ -22,9 +22,13 @@
 - [x] beta-3 feat(input): add TCP frame reassembly
 - [x] beta-3 test(input): add TCP stream parsing tests
 
-- [ ] beta-4 feat(core): add normalized TrackingFrame model updates
-- [ ] beta-4 feat(core): derive eye yaw/pitch from raw eye angles
-- [ ] beta-4 feat(core): add frame validity and confidence logic
+- [x] beta-4 feat(core): add normalized TrackingFrame model updates
+- [x] beta-4 feat(core): derive eye yaw/pitch from raw eye angles
+- [x] beta-4 feat(core): add frame validity and confidence logic
+
+- [ ] gamma-1 feat(calib): add neutral pose calibration
+- [ ] gamma-1 feat(calib): persist calibration data
+- [ ] gamma-2 feat(map): add axis sensitivity and deadzone
 
 ## Commit Unit Convention
 
