@@ -8,6 +8,7 @@ use unvet_core::{model::TrackingFrame, ports::InputReceiver, AppError, AppResult
 
 pub const IFACIALMOCAP_UDP_PORT: u16 = 49983;
 pub const IFACIALMOCAP_TCP_PORT: u16 = 49986;
+const TCP_REASSEMBLY_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
@@ -284,6 +285,7 @@ impl IfacialMocapReceiver {
      self.stats.tcp_bytes_received += size as u64;
      self.stats.last_packet_timestamp_ms = Some(now_millis());
      self.tcp_reassembly_buffer.extend_from_slice(&self.tcp_read_buffer[..size]);
+      self.trim_tcp_reassembly_buffer();
      if let Some(frame) = self.parse_reassembled_tcp_frames() {
       latest = Some(frame);
      }
@@ -310,13 +312,24 @@ impl IfacialMocapReceiver {
   }
  }
 
+ fn trim_tcp_reassembly_buffer(&mut self) {
+   if self.tcp_reassembly_buffer.len() <= TCP_REASSEMBLY_MAX_BYTES {
+    return;
+   }
+
+   let overflow = self.tcp_reassembly_buffer.len() - TCP_REASSEMBLY_MAX_BYTES;
+   self.tcp_reassembly_buffer.drain(..overflow);
+   self.stats.frames_dropped += 1;
+   self.stats.last_error = Some(format!("TCP reassembly buffer overflow: dropped {overflow} byte(s)"));
+ }
+
  fn parse_reassembled_tcp_frames(&mut self) -> Option<TrackingFrame> {
   let mut latest = None;
 
   while let Some(frame_end_index) = self
    .tcp_reassembly_buffer
    .iter()
-   .position(|byte| *byte == b'\n' || *byte == b'\0')
+    .position(|byte| is_tcp_delimiter(*byte))
   {
    let frame_with_delimiter: Vec<u8> = self.tcp_reassembly_buffer.drain(..=frame_end_index).collect();
    let raw_frame = &frame_with_delimiter[..frame_with_delimiter.len().saturating_sub(1)];
@@ -347,6 +360,10 @@ impl IfacialMocapReceiver {
   self.active = false;
   self.stats.last_error = Some(message);
  }
+}
+
+fn is_tcp_delimiter(byte: u8) -> bool {
+ matches!(byte, b'\n' | b'\0' | b'\r')
 }
 
 impl InputReceiver for IfacialMocapReceiver {
