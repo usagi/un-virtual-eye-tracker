@@ -33,6 +33,9 @@
 - [x] gamma-3 feat(filter): add exponential smoothing
 - [x] gamma-4 feat(map): add head-eye blend presets
 - [x] gamma-4 feat(config): add per-game mapping profiles
+- [x] delta-1 feat(output-mouse): implement relative mouse backend
+- [x] delta-1 feat(output-mouse): add speed mapping and clamp
+- [ ] delta-2 feat(output-keyboard): implement directional key backend
 
 ## Commit Unit Convention
 
