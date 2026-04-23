@@ -26,9 +26,11 @@
 - [x] beta-4 feat(core): derive eye yaw/pitch from raw eye angles
 - [x] beta-4 feat(core): add frame validity and confidence logic
 
-- [ ] gamma-1 feat(calib): add neutral pose calibration
-- [ ] gamma-1 feat(calib): persist calibration data
+- [x] gamma-1 feat(calib): add neutral pose calibration
+- [x] gamma-1 feat(calib): persist calibration data
 - [ ] gamma-2 feat(map): add axis sensitivity and deadzone
+- [ ] gamma-2 feat(map): add response curve presets
+- [ ] gamma-3 feat(filter): add exponential smoothing
 
 ## Commit Unit Convention
 
