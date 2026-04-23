@@ -1,4 +1,9 @@
-use std::{env, path::PathBuf};
+use std::{
+ env,
+ path::PathBuf,
+ thread,
+ time::{Duration, Instant},
+};
 
 use tracing::{info, warn};
 use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset};
@@ -91,37 +96,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  let mut output_layer = OutputBackendLayer::new(config.output.backend);
  output_layer.set_enabled(config.output.enabled)?;
 
- receiver.ingest_mock_frame(TrackingFrame {
-  timestamp_ms: 0,
-  head_yaw_deg: 2.0,
-  head_pitch_deg: -1.5,
-  head_roll_deg: 0.0,
-  eye_yaw_deg: 4.0,
-  eye_pitch_deg: -2.0,
-  left_eye_yaw_deg: 3.8,
-  left_eye_pitch_deg: -2.2,
-  right_eye_yaw_deg: 4.2,
-  right_eye_pitch_deg: -1.8,
-  confidence: 1.0,
-  active: true,
- });
+ let poll_interval = Duration::from_millis(8);
+ let no_frame_idle_timeout = Duration::from_millis(250);
+ let reconnect_interval = Duration::from_secs(1);
+ let mut last_frame_at = Instant::now();
+ let mut last_reconnect_attempt_at = Instant::now();
+ let mut forced_idle_output = false;
 
- if let Some(frame) = receiver.poll_frame() {
-  if config.calibration.enabled && config.calibration.capture_on_start && !config.calibration.calibrated && receiver.is_active() {
-   calibration.calibrate_from_frame(frame);
-   config.calibration.set_offsets(calibration.offsets());
-   config.calibration.capture_on_start = false;
-   config.save_to_path(&config_path)?;
-   info!(path = %config_path.display(), "neutral calibration captured and persisted");
+ info!(
+  receiver = receiver.source_name(),
+  backend = output_layer.active_backend_name()?,
+  "UNVET runtime loop started; press Ctrl+C to stop"
+ );
+
+ loop {
+  if !receiver.is_active() && last_reconnect_attempt_at.elapsed() >= reconnect_interval {
+   match receiver.connect() {
+    Ok(()) => info!(receiver = receiver.source_name(), "input receiver reconnected"),
+    Err(error) => warn!(error = %error, "input receiver reconnect failed"),
+   }
+   last_reconnect_attempt_at = Instant::now();
   }
 
-  let calibrated_frame = calibration.apply(frame);
-  let output_frame = build_output_frame(calibrated_frame, &active_mapping);
-  let smoothed_output = frame_smoother.update(output_frame);
-  output_layer.apply(smoothed_output)?;
-  info!(backend = output_layer.active_backend_name()?, "bootstrap output frame applied");
- }
+  if let Some(frame) = receiver.poll_frame() {
+   if config.calibration.enabled && config.calibration.capture_on_start && !config.calibration.calibrated && receiver.is_active() {
+    calibration.calibrate_from_frame(frame);
+    config.calibration.set_offsets(calibration.offsets());
+    config.calibration.capture_on_start = false;
+    config.save_to_path(&config_path)?;
+    info!(path = %config_path.display(), "neutral calibration captured and persisted");
+   }
 
- info!(receiver = receiver.source_name(), "UNVET bootstrap complete");
- Ok(())
+   let calibrated_frame = calibration.apply(frame);
+   let output_frame = build_output_frame(calibrated_frame, &active_mapping);
+   let smoothed_output = frame_smoother.update(output_frame);
+   output_layer.apply(smoothed_output)?;
+
+   last_frame_at = Instant::now();
+   forced_idle_output = false;
+  } else if !forced_idle_output && last_frame_at.elapsed() >= no_frame_idle_timeout {
+   // On temporary tracking loss, send an inactive frame once to avoid stuck output state.
+   output_layer.apply(OutputFrame::default())?;
+   forced_idle_output = true;
+  }
+
+  thread::sleep(poll_interval);
+ }
 }
