@@ -36,6 +36,10 @@
 - [x] delta-1 feat(output-mouse): implement relative mouse backend
 - [x] delta-1 feat(output-mouse): add speed mapping and clamp
 - [x] delta-2 feat(output-keyboard): implement directional key backend
+- [x] delta-3 feat(output-ets2): implement ets2/ats dedicated backend
+- [x] delta-3 feat(output-ets2): add truck sim response presets
+- [x] delta-3 test(output-ets2): add backend mapping tests
+- [ ] delta-4 feat(output): add backend abstraction layer
 
 ## Commit Unit Convention
 
