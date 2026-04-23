@@ -88,6 +88,14 @@ ETS2 / ATS では、ハンドルコントローラー利用時に視点操作の
 - 初版から全ゲーム対応を狙わない
 - 初版から複雑な 3D アバター描画は行わない
 
+### 3.3 GUI 方針（v1）
+
+- GUI は「目立たず堅実に運用するための補助UI」に限定する
+- 制御ループは Rust 側で完結し、GUI は状態表示と設定操作に限定する
+- すべての設定を GUI で網羅しない
+- GUI で扱うのはユーザーが実行中に調整する頻度が高い項目を優先する
+- 詳細方針は `docs/gui-guidelines.md` を正本とする
+
 ---
 
 ## 4. 要求仕様
@@ -126,8 +134,9 @@ ETS2 / ATS では、ハンドルコントローラー利用時に視点操作の
 - 現在値モニター
 - キャリブレーション実行
 - 出力方式選択
-- プロファイル保存 / 読込
-- ゲーム別設定
+- 高需要ランタイム設定（感度 / デッドゾーン / 平滑化）
+- 簡易プレビュー（レティクル / 移動量ベクトル）
+- すべての詳細設定を GUI に載せない（詳細は設定ファイルで管理）
 
 ### 運用
 
@@ -144,6 +153,7 @@ ETS2 / ATS では、ハンドルコントローラー利用時に視点操作の
 - 入力受信から出力までの遅延を極小化
 - GUI 有無で処理系を分離し、無駄な描画負荷を避ける
 - 30 FPS 低下時でも破綻しにくい補間 / 平滑化
+- GUI 更新レートは制御ループから分離し、必要最小限（目安 10-30Hz）に制限する
 
 ### 保守性
 
@@ -622,14 +632,18 @@ pub struct OutputFrame {
 
 # フェイズε: UI / UX / 設定管理
 
-## ε-1. 最小 UI
+GUI 詳細方針は `docs/gui-guidelines.md` を参照する。
+
+## ε-1. 最小 UI（Tauri ミニUI）
 
 ### 作業
 
 - 接続状態
-- 現在の yaw/pitch 表示
+- 現在の yaw/pitch/confidence 表示
 - ON/OFF
 - backend 選択
+- 入力ソース切替（UDP/TCP）
+- 一時停止
 
 ### 完了条件
 
@@ -640,7 +654,7 @@ pub struct OutputFrame {
 - `feat(ui): add main control window`
 - `feat(ui): show tracking status and live values`
 
-## ε-2. 調整 UI
+## ε-2. 調整 UI / 簡易プレビュー
 
 ### 作業
 
@@ -648,17 +662,18 @@ pub struct OutputFrame {
 - 感度
 - デッドゾーン
 - 平滑化
-- プロファイル保存
+- レティクル表示
+- 移動量モード用矢印表示
 
 ### 完了条件
 
-- ユーザーが自己調整できる
+- 高需要項目を GUI から実行中に自己調整できる
 
 ### 想定コミット
 
 - `feat(ui): add calibration controls`
 - `feat(ui): add mapping and smoothing settings`
-- `feat(config): add profile save and load`
+- `feat(ui): add reticle and vector preview`
 
 ## ε-3. ホットキー / トレイ / 一時停止
 
@@ -667,7 +682,7 @@ pub struct OutputFrame {
 - 出力 ON/OFF
 - 一時停止
 - 再キャリブレーション
-- 常駐化
+- 常駐化（Windows トレイ格納は optional）
 
 ### 完了条件
 
@@ -676,7 +691,7 @@ pub struct OutputFrame {
 ### 想定コミット
 
 - `feat(ui): add hotkeys for enable pause recalibrate`
-- `feat(ui): add tray integration`
+- `feat(ui): add optional tray integration`
 
 ---
 
@@ -852,7 +867,7 @@ project-root/
 - キャリブレーション
 - 平滑化
 - ETS2/ATS 専用出力または mouse backend のどちらかで実用
-- UI から ON/OFF と感度調整可能
+- UI から ON/OFF と高需要項目（感度 / デッドゾーン / 平滑化）を調整可能
 - 設定保存可能
 
 ### MVP 完了の判断基準
@@ -874,7 +889,7 @@ project-root/
 4. γ 系で自然な出力へ整える
 5. δ-1 / δ-2 で mouse / keyboard backend を先に完成させる
 6. その後 δ-3 の ETS2/ATS 専用 backend を詰める
-7. UI と設定を載せて MVP 完了
+7. 最小 UI と高需要設定を載せて MVP 完了
 8. その後 η 系の拡張へ進む
 
 ---
