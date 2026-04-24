@@ -11,3 +11,6 @@ unvet-config = { path = "../config" }
 unvet-core = { path = "../core" }
 unvet-input-ifacialmocap = { path = "../input-ifacialmocap" }
 unvet-output = { path = "../output" }
+
+[build-dependencies]
+winres = "0.1"

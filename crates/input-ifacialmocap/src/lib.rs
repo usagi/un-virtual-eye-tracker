@@ -5,9 +5,9 @@ use std::{
 };
 
 use unvet_core::{
+ AppError, AppResult,
  model::{RawTrackingFrame, TrackingFrame},
  ports::InputReceiver,
- AppError, AppResult,
 };
 
 pub const IFACIALMOCAP_UDP_PORT: u16 = 49983;
@@ -109,11 +109,24 @@ impl IfacialMocapReceiver {
 
   self.state = ConnectionState::Connecting;
 
-  let bind_address = format!("0.0.0.0:{}", self.options.udp_port);
-  let socket = match UdpSocket::bind(&bind_address) {
+  let preferred_bind_address = format!("0.0.0.0:{}", self.options.udp_port);
+  let socket = match UdpSocket::bind(&preferred_bind_address) {
    Ok(socket) => socket,
+   Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+    // When another process already owns the configured local UDP port,
+    // fall back to an ephemeral port so a second GUI/runtime can still receive.
+    match UdpSocket::bind("0.0.0.0:0") {
+     Ok(socket) => socket,
+     Err(fallback_error) => {
+      self.record_error(format!(
+       "failed to bind UDP socket on {preferred_bind_address} (in use) and fallback 0.0.0.0:0: {fallback_error}"
+      ));
+      return Err(AppError::from(fallback_error));
+     },
+    }
+   },
    Err(error) => {
-    self.record_error(format!("failed to bind UDP socket on {bind_address}: {error}"));
+    self.record_error(format!("failed to bind UDP socket on {preferred_bind_address}: {error}"));
     return Err(AppError::from(error));
    },
   };
@@ -241,7 +254,20 @@ impl IfacialMocapReceiver {
      self.stats.last_packet_timestamp_ms = Some(now_millis());
 
      let packet = String::from_utf8_lossy(&self.receive_buffer[..size]);
-     match parse_tracking_frame(&packet, now_millis()) {
+     let packet = packet
+      .trim_matches(|character| character == '\r' || character == '\n' || character == '\0')
+      .trim();
+     if packet.is_empty() {
+      continue;
+     }
+
+     // Some setups echo our own start command back to the bound UDP socket.
+     // Treat it as control traffic and skip parsing as a tracking frame.
+     if packet.eq_ignore_ascii_case(self.options.start_command.trim()) {
+      continue;
+     }
+
+     match parse_tracking_frame(packet, now_millis()) {
       Ok(frame) => {
        self.stats.frames_parsed += 1;
        latest = Some(frame);
@@ -398,23 +424,33 @@ pub fn parse_tracking_frame(packet: &str, timestamp_ms: u64) -> AppResult<Tracki
    continue;
   }
 
-  if let Some(raw) = trimmed.strip_prefix("head#") {
-   head = Some(parse_triplet(raw)?);
+  let normalized = trimmed
+   .trim_start_matches(|character| matches!(character, '=' | '/' | ':' | ';' | ','))
+   .trim();
+  let Some((field_name, raw_value)) = normalized.split_once('#') else {
+   continue;
+  };
+
+  let field_name = field_name.trim();
+  let raw_value = raw_value.trim();
+
+  if field_name.eq_ignore_ascii_case("head") {
+   head = Some(parse_triplet(raw_value)?);
    continue;
   }
 
-  if let Some(raw) = trimmed.strip_prefix("leftEye#") {
-   left_eye = Some(parse_triplet(raw)?);
+  if field_name.eq_ignore_ascii_case("leftEye") {
+   left_eye = Some(parse_triplet(raw_value)?);
    continue;
   }
 
-  if let Some(raw) = trimmed.strip_prefix("rightEye#") {
-   right_eye = Some(parse_triplet(raw)?);
+  if field_name.eq_ignore_ascii_case("rightEye") {
+   right_eye = Some(parse_triplet(raw_value)?);
    continue;
   }
 
-  if let Some(raw) = trimmed.strip_prefix("confidence#") {
-   if let Ok(value) = raw.trim().parse::<f32>() {
+  if field_name.eq_ignore_ascii_case("confidence") {
+   if let Ok(value) = raw_value.parse::<f32>() {
     confidence = value.clamp(0.0, 1.0);
    }
   }

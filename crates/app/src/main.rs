@@ -18,6 +18,9 @@ use unvet_core::{
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
 use unvet_output::OutputBackendLayer;
 
+const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
+const OUTPUT_EASING_ALPHA_MAX: f32 = 1.0;
+
 fn default_config_path() -> PathBuf {
  PathBuf::from("config/unvet.toml")
 }
@@ -31,8 +34,10 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFr
  };
  let (yaw_mix, pitch_mix) = resolve_head_eye_mix(blend_preset, mapping.eye_head_mix_yaw, mapping.eye_head_mix_pitch);
 
- let mixed_yaw = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, yaw_mix);
- let mixed_pitch = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, pitch_mix);
+ // iFacialMocap reports horizontal/vertical in an axis order opposite to our internal yaw/pitch labels.
+ // Map yaw from vertical component slot and pitch from horizontal component slot to keep control intuitive.
+ let mixed_yaw = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, yaw_mix);
+ let mixed_pitch = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, pitch_mix);
  let response_curve = match mapping.response_curve_preset {
   MappingCurvePreset::Linear => ResponseCurvePreset::Linear,
   MappingCurvePreset::Smooth => ResponseCurvePreset::Smooth,
@@ -53,8 +58,14 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFr
  };
 
  OutputFrame {
-  look_yaw_norm: map_angle_to_normalized(mixed_yaw, yaw_settings),
-  look_pitch_norm: map_angle_to_normalized(mixed_pitch, pitch_settings),
+  look_yaw_norm: (map_angle_to_normalized(mixed_yaw, yaw_settings)
+   * mapping.yaw_output_multiplier
+   * if mapping.invert_output_yaw { -1.0 } else { 1.0 })
+  .clamp(-1.0, 1.0),
+  look_pitch_norm: (map_angle_to_normalized(mixed_pitch, pitch_settings)
+   * mapping.pitch_output_multiplier
+   * if mapping.invert_output_pitch { -1.0 } else { 1.0 })
+  .clamp(-1.0, 1.0),
   confidence: frame.confidence,
   active: frame.active,
  }
@@ -90,10 +101,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  }
 
  let mut calibration = build_calibration(&config);
- let active_mapping = config.effective_mapping();
+ let mut active_mapping = config.effective_mapping();
+ active_mapping.smoothing_alpha = active_mapping
+  .smoothing_alpha
+  .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
  let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
 
- let mut output_layer = OutputBackendLayer::new(config.output.backend);
+ let mut output_layer = OutputBackendLayer::new(&config.output);
  output_layer.set_enabled(config.output.enabled)?;
 
  let poll_interval = Duration::from_millis(8);
@@ -129,7 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
    let calibrated_frame = calibration.apply(frame);
    let output_frame = build_output_frame(calibrated_frame, &active_mapping);
-   let smoothed_output = frame_smoother.update(output_frame);
+   let smoothed_output = if active_mapping.output_easing_enabled {
+    frame_smoother.update(output_frame)
+   } else {
+    frame_smoother.reset();
+    output_frame
+   };
    output_layer.apply(smoothed_output)?;
 
    last_frame_at = Instant::now();

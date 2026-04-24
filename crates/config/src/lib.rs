@@ -22,6 +22,7 @@ pub enum OutputBackendKind {
  Ets2,
  Mouse,
  Keyboard,
+ Touch,
 }
 
 impl Default for OutputBackendKind {
@@ -95,9 +96,39 @@ impl Default for InputConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+pub struct OutputSendFilterConfig {
+ pub mode: OutputSendFilterMode,
+ pub process_names: Vec<String>,
+}
+
+impl Default for OutputSendFilterConfig {
+ fn default() -> Self {
+  Self {
+   mode: OutputSendFilterMode::default(),
+   process_names: Vec::new(),
+  }
+ }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputSendFilterMode {
+ Unrestricted,
+ ForegroundProcess,
+}
+
+impl Default for OutputSendFilterMode {
+ fn default() -> Self {
+  Self::Unrestricted
+ }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct OutputConfig {
  pub backend: OutputBackendKind,
  pub enabled: bool,
+ pub send_filter: OutputSendFilterConfig,
 }
 
 impl Default for OutputConfig {
@@ -105,6 +136,7 @@ impl Default for OutputConfig {
   Self {
    backend: OutputBackendKind::default(),
    enabled: true,
+   send_filter: OutputSendFilterConfig::default(),
   }
  }
 }
@@ -113,9 +145,14 @@ impl Default for OutputConfig {
 #[serde(default)]
 pub struct MappingConfig {
  pub smoothing_alpha: f32,
+ pub output_easing_enabled: bool,
  pub deadzone_percent: f32,
  pub yaw_sensitivity: f32,
  pub pitch_sensitivity: f32,
+ pub yaw_output_multiplier: f32,
+ pub pitch_output_multiplier: f32,
+ pub invert_output_yaw: bool,
+ pub invert_output_pitch: bool,
  pub response_curve_preset: MappingCurvePreset,
  pub head_eye_blend_preset: MappingBlendPreset,
  pub eye_head_mix_yaw: f32,
@@ -126,9 +163,14 @@ impl Default for MappingConfig {
  fn default() -> Self {
   Self {
    smoothing_alpha: 0.18,
+   output_easing_enabled: true,
    deadzone_percent: 0.06,
    yaw_sensitivity: 1.0,
    pitch_sensitivity: 1.0,
+   yaw_output_multiplier: 1.0,
+   pitch_output_multiplier: 1.0,
+   invert_output_yaw: false,
+   invert_output_pitch: false,
    response_curve_preset: MappingCurvePreset::default(),
    head_eye_blend_preset: MappingBlendPreset::default(),
    eye_head_mix_yaw: 0.7,
@@ -181,6 +223,7 @@ impl MappingProfilesConfig {
 #[serde(default)]
 pub struct RuntimeConfig {
  pub pause_on_unfocused: bool,
+ pub persist_session_settings: bool,
  pub hotkey_toggle: String,
  pub hotkey_recalibrate: String,
 }
@@ -189,6 +232,7 @@ impl Default for RuntimeConfig {
  fn default() -> Self {
   Self {
    pause_on_unfocused: true,
+   persist_session_settings: true,
    hotkey_toggle: "Ctrl+Shift+E".to_owned(),
    hotkey_recalibrate: "Ctrl+Shift+R".to_owned(),
   }
@@ -372,5 +416,27 @@ mod tests {
 
   let effective = config.effective_mapping();
   assert!((effective.yaw_sensitivity - 1.7).abs() < 0.001);
+ }
+
+ #[test]
+ fn output_send_filter_can_parse_process_restriction() {
+  let config = AppConfig::from_toml(
+   r#"
+[output]
+backend = "keyboard"
+enabled = true
+
+[output.send_filter]
+mode = "foreground_process"
+process_names = ["eurotrucks2.exe", "amtrucks.exe"]
+"#,
+  )
+  .expect("parse output send filter config");
+
+  assert_eq!(config.output.send_filter.mode, OutputSendFilterMode::ForegroundProcess);
+  assert_eq!(
+   config.output.send_filter.process_names,
+   vec!["eurotrucks2.exe".to_owned(), "amtrucks.exe".to_owned()]
+  );
  }
 }

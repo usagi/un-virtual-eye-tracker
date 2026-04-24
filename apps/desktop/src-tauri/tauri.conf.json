@@ -1,39 +1,38 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "UNVET Desktop",
-  "version": "0.1.0",
-  "identifier": "network.usagi.unvet.desktop",
-  "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "UNVET Desktop",
-        "width": 980,
-        "height": 720,
-        "minWidth": 840,
-        "minHeight": 620,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+ "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+ "productName": "UNVET Desktop",
+ "version": "0.1.0",
+ "identifier": "network.usagi.unvet.desktop",
+ "build": {
+  "frontendDist": "../dist",
+  "beforeBuildCommand": "npm run build"
+ },
+ "app": {
+  "windows": [
+   {
+    "title": "UNVET Desktop",
+    "width": 1260,
+    "height": 860,
+    "minWidth": 1260,
+    "minHeight": 860,
+    "resizable": false,
+    "maximizable": false,
+    "fullscreen": false
+   }
+  ],
+  "security": {
+   "csp": null
   }
+ },
+ "bundle": {
+  "active": true,
+  "targets": "all",
+  "icon": [
+   "icons/32x32.png",
+   "icons/128x128.png",
+   "icons/128x128@2x.png",
+   "icons/icon.icns",
+   "icons/icon.ico"
+  ]
+ }
 }

@@ -1,6 +1,6 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Keep the desktop build GUI-only when launched from Explorer on Windows.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() {
-  unvet_desktop_lib::run();
+ unvet_desktop_lib::run();
 }

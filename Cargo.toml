@@ -1,15 +1,18 @@
 [workspace]
 members = [
+ "apps/desktop/src-tauri",
  "crates/app",
  "crates/core",
  "crates/config",
  "crates/input-ifacialmocap",
  "crates/output-ets2",
  "crates/output-mouse",
+ "crates/output-touch",
  "crates/output-keyboard",
  "crates/output",
  "crates/ui",
 ]
+default-members = ["apps/desktop/src-tauri"]
 resolver = "2"
 
 [workspace.package]

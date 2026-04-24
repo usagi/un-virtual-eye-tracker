@@ -27,5 +27,3 @@ unvet-config = { path = "../../../crates/config" }
 unvet-core = { path = "../../../crates/core" }
 unvet-input-ifacialmocap = { path = "../../../crates/input-ifacialmocap" }
 unvet-output = { path = "../../../crates/output" }
-
-[workspace]

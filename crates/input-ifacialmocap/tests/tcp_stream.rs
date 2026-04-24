@@ -1,9 +1,4 @@
-use std::{
- io::Write,
- net::TcpListener,
- thread,
- time::Duration,
-};
+use std::{io::Write, net::TcpListener, thread, time::Duration};
 
 use unvet_core::ports::InputReceiver;
 use unvet_input_ifacialmocap::{ConnectionState, IfacialMocapReceiver, ReceiverOptions};

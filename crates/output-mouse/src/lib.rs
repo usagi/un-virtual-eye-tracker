@@ -1,11 +1,6 @@
 use std::mem::size_of;
 
-use unvet_core::{
- AppError,
- AppResult,
- model::OutputFrame,
- ports::OutputBackend,
-};
+use unvet_core::{AppError, AppResult, model::OutputFrame, ports::OutputBackend};
 
 pub struct MouseBackend {
  enabled: bool,
@@ -17,49 +12,45 @@ impl Default for MouseBackend {
  fn default() -> Self {
   Self {
    enabled: true,
-     speed_scale: 20.0,
-    max_delta_per_tick: 30,
+   speed_scale: 20.0,
+   max_delta_per_tick: 30,
   }
  }
 }
 
 impl MouseBackend {
  pub fn set_speed_scale(&mut self, speed_scale: f32) {
-   self.speed_scale = speed_scale.clamp(1.0, 200.0);
+  self.speed_scale = speed_scale.clamp(1.0, 200.0);
  }
 
  pub fn set_max_delta_per_tick(&mut self, max_delta_per_tick: i32) {
-   self.max_delta_per_tick = max_delta_per_tick.clamp(1, 200);
+  self.max_delta_per_tick = max_delta_per_tick.clamp(1, 200);
  }
 
  fn map_speed_component(value_norm: f32, speed_scale: f32) -> f32 {
-   let value_norm = value_norm.clamp(-1.0, 1.0);
-   let magnitude = value_norm.abs();
-   let curved = magnitude * magnitude * (3.0 - 2.0 * magnitude);
-   value_norm.signum() * curved * speed_scale
+  let value_norm = value_norm.clamp(-1.0, 1.0);
+  let magnitude = value_norm.abs();
+  let curved = magnitude * magnitude * (3.0 - 2.0 * magnitude);
+  value_norm.signum() * curved * speed_scale
  }
 
  fn frame_to_relative(frame: OutputFrame, speed_scale: f32, max_delta_per_tick: i32) -> Option<(i32, i32)> {
-    if !frame.active {
-     return None;
-    }
+  if !frame.active {
+   return None;
+  }
 
-   let max_delta = max_delta_per_tick.max(1) as f32;
-   let dx = Self::map_speed_component(frame.look_yaw_norm, speed_scale)
-    .clamp(-max_delta, max_delta)
-    .round() as i32;
-   let dy = Self::map_speed_component(frame.look_pitch_norm, speed_scale)
-    .clamp(-max_delta, max_delta)
-    .round() as i32;
-    if dx == 0 && dy == 0 {
-     None
-    } else {
-     Some((dx, dy))
-    }
+  let max_delta = max_delta_per_tick.max(1) as f32;
+  let dx = Self::map_speed_component(frame.look_yaw_norm, speed_scale)
+   .clamp(-max_delta, max_delta)
+   .round() as i32;
+  let dy = Self::map_speed_component(frame.look_pitch_norm, speed_scale)
+   .clamp(-max_delta, max_delta)
+   .round() as i32;
+  if dx == 0 && dy == 0 { None } else { Some((dx, dy)) }
  }
 
  fn send_relative(dx: i32, dy: i32) -> AppResult<()> {
-    send_relative_platform(dx, dy)
+  send_relative_platform(dx, dy)
  }
 }
 
@@ -69,13 +60,13 @@ impl OutputBackend for MouseBackend {
  }
 
  fn apply(&mut self, frame: OutputFrame) -> AppResult<()> {
-    if !self.enabled {
+  if !self.enabled {
    return Ok(());
   }
 
-   if let Some((dx, dy)) = Self::frame_to_relative(frame, self.speed_scale, self.max_delta_per_tick) {
-     Self::send_relative(dx, dy)?;
-    }
+  if let Some((dx, dy)) = Self::frame_to_relative(frame, self.speed_scale, self.max_delta_per_tick) {
+   Self::send_relative(dx, dy)?;
+  }
   Ok(())
  }
 
@@ -106,7 +97,7 @@ fn send_relative_platform(dx: i32, dy: i32) -> AppResult<()> {
  #[repr(C)]
  struct Input {
   input_type: u32,
-   mouse: MouseInput,
+  mouse: MouseInput,
  }
 
  #[link(name = "User32")]
@@ -116,19 +107,17 @@ fn send_relative_platform(dx: i32, dy: i32) -> AppResult<()> {
 
  let input = Input {
   input_type: INPUT_MOUSE,
-   mouse: MouseInput {
-    dx,
-    dy,
-    mouse_data: 0,
-    flags: MOUSEEVENTF_MOVE,
-    time: 0,
-    extra_info: 0,
+  mouse: MouseInput {
+   dx,
+   dy,
+   mouse_data: 0,
+   flags: MOUSEEVENTF_MOVE,
+   time: 0,
+   extra_info: 0,
   },
  };
 
- let wrote = unsafe {
-  SendInput(1, &input as *const Input, size_of::<Input>() as i32)
- };
+ let wrote = unsafe { SendInput(1, &input as *const Input, size_of::<Input>() as i32) };
  if wrote != 1 {
   return Err(AppError::InvalidState("failed to send relative mouse input".to_owned()));
  }

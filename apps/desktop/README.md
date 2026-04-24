@@ -21,7 +21,23 @@ From `apps/desktop`:
 ```bash
 npm install
 npm run check
-npm run dev:tauri
+npm run build
+```
+
+Then launch from workspace root:
+
+```bash
+cargo run
+```
+
+This default path does not require a localhost dev server.
+
+### Optional HMR (Vite + Tauri)
+
+If you want live frontend reload:
+
+```bash
+npm run dev:tauri:hmr
 ```
 
 ## Build

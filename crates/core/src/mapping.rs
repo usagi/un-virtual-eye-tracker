@@ -27,7 +27,7 @@ impl Default for AxisMappingSettings {
    sensitivity: 1.0,
    deadzone: 0.06,
    max_input_angle_deg: 30.0,
-    response_curve: ResponseCurvePreset::Linear,
+   response_curve: ResponseCurvePreset::Linear,
   }
  }
 }
@@ -84,12 +84,7 @@ fn apply_response_curve(value: f32, preset: ResponseCurvePreset) -> f32 {
 #[cfg(test)]
 mod tests {
  use super::{
-  HeadEyeBlendPreset,
-  map_angle_to_normalized,
-  mix_eye_and_head,
-  resolve_head_eye_mix,
-  AxisMappingSettings,
-    ResponseCurvePreset,
+  AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset, map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix,
  };
 
  #[test]
@@ -154,7 +149,7 @@ mod tests {
  #[test]
  fn curve_presets_change_output_shape() {
   let linear = map_angle_to_normalized(
-    3.0,
+   3.0,
    AxisMappingSettings {
     sensitivity: 1.0,
     deadzone: 0.0,
@@ -163,7 +158,7 @@ mod tests {
    },
   );
   let smooth = map_angle_to_normalized(
-    3.0,
+   3.0,
    AxisMappingSettings {
     sensitivity: 1.0,
     deadzone: 0.0,
@@ -172,7 +167,7 @@ mod tests {
    },
   );
   let aggressive = map_angle_to_normalized(
-    3.0,
+   3.0,
    AxisMappingSettings {
     sensitivity: 1.0,
     deadzone: 0.0,

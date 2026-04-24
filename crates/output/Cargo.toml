@@ -11,3 +11,4 @@ unvet-core = { path = "../core" }
 unvet-output-ets2 = { path = "../output-ets2" }
 unvet-output-keyboard = { path = "../output-keyboard" }
 unvet-output-mouse = { path = "../output-mouse" }
+unvet-output-touch = { path = "../output-touch" }

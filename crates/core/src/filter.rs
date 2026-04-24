@@ -14,6 +14,10 @@ impl ExponentialSmoother {
   }
  }
 
+ pub fn set_alpha(&mut self, alpha: f32) {
+  self.alpha = alpha.clamp(0.0, 1.0);
+ }
+
  pub fn reset(&mut self) {
   self.state = None;
  }
@@ -44,6 +48,11 @@ impl OutputFrameSmoother {
    yaw: ExponentialSmoother::new(alpha),
    pitch: ExponentialSmoother::new(alpha),
   }
+ }
+
+ pub fn set_alpha(&mut self, alpha: f32) {
+  self.yaw.set_alpha(alpha);
+  self.pitch.set_alpha(alpha);
  }
 
  pub fn reset(&mut self) {
@@ -122,5 +131,27 @@ mod tests {
   let value = smoother.update(f32::NAN);
 
   assert!((value - 0.25).abs() < 0.0001);
+ }
+
+ #[test]
+ fn output_frame_smoother_allows_runtime_alpha_changes() {
+  let mut smoother = OutputFrameSmoother::new(1.0);
+  let _ = smoother.update(OutputFrame {
+   look_yaw_norm: 0.0,
+   look_pitch_norm: 0.0,
+   confidence: 1.0,
+   active: true,
+  });
+
+  smoother.set_alpha(0.25);
+  let frame = smoother.update(OutputFrame {
+   look_yaw_norm: 1.0,
+   look_pitch_norm: -1.0,
+   confidence: 1.0,
+   active: true,
+  });
+
+  assert!((frame.look_yaw_norm - 0.25).abs() < 0.0001);
+  assert!((frame.look_pitch_norm + 0.25).abs() < 0.0001);
  }
 }
