@@ -25,6 +25,16 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Prepare frontendDist placeholder
+        shell: pwsh
+        run: |
+          $distDir = Join-Path $PWD "apps/desktop/dist"
+          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+          $indexFile = Join-Path $distDir "index.html"
+          if (-not (Test-Path $indexFile)) {
+            Set-Content -Path $indexFile -Value "<!doctype html><html><body>CI placeholder</body></html>" -NoNewline
+          }
+
       - name: Run workspace tests
         env:
           UNVET_SKIP_FRONTEND_BUILD: "1"
