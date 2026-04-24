@@ -1,4 +1,6 @@
-<img src="images/icon.png" alt="UNVET icon" width="256" height="256" />
+<p align="center">
+    <img src="images/icon.png" alt="UNVET icon" width="256" height="256" />
+</p>
 
 # UNVET - USAGI.NETWORK Virtual Eye Tracker
 
