@@ -1,0 +1,2 @@
+# Keep Rust source files on LF so rustfmt checks are stable across platforms.
+*.rs text eol=lf
