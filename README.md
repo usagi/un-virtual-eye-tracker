@@ -1,3 +1,5 @@
+<img src="images/icon.png" alt="UNVET icon" width="256" height="256" />
+
 # UNVET - USAGI.NETWORK Virtual Eye Tracker
 
 UNVETは仮想アイトラッキングアプリです。
