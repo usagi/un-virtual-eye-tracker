@@ -26,6 +26,8 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run workspace tests
+        env:
+          UNVET_SKIP_FRONTEND_BUILD: "1"
         run: cargo test --workspace
 
       - name: Run clean-room policy check
