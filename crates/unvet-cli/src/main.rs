@@ -8,6 +8,7 @@ use std::{
 use tracing::{info, warn};
 use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset};
 use unvet_core::{
+ AppResult,
  calibration::NeutralPoseCalibration,
  filter::OutputFrameSmoother,
  logging,
@@ -16,16 +17,70 @@ use unvet_core::{
  ports::InputReceiver,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
+use unvet_input_vmc_osc::{ReceiverOptions as VmcOscReceiverOptions, VmcOscReceiver};
 use unvet_output::OutputBackendLayer;
 
 const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
 const OUTPUT_EASING_ALPHA_MAX: f32 = 1.0;
 
+enum ActiveInputReceiver {
+ IfacialMocap(IfacialMocapReceiver),
+ VmcOsc(VmcOscReceiver),
+}
+
+impl ActiveInputReceiver {
+ fn from_config(config: &AppConfig) -> Self {
+  match config.input.source {
+   InputSource::IfacialmocapUdp | InputSource::IfacialmocapTcp => {
+    let mut options = ReceiverOptions::default();
+    options.host = config.input.host.clone();
+    options.udp_port = config.input.udp_port;
+    options.tcp_port = config.input.tcp_port;
+    options.use_tcp = matches!(config.input.source, InputSource::IfacialmocapTcp);
+    Self::IfacialMocap(IfacialMocapReceiver::new(options))
+   },
+   InputSource::VmcOsc => {
+    let mut options = VmcOscReceiverOptions::default();
+    options.udp_port = config.input.vmc_osc_port;
+    Self::VmcOsc(VmcOscReceiver::new(options))
+   },
+  }
+ }
+
+ fn connect(&mut self) -> AppResult<()> {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.connect(),
+   Self::VmcOsc(receiver) => receiver.connect(),
+  }
+ }
+
+ fn poll_frame(&mut self) -> Option<TrackingFrame> {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.poll_frame(),
+   Self::VmcOsc(receiver) => receiver.poll_frame(),
+  }
+ }
+
+ fn is_active(&self) -> bool {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.is_active(),
+   Self::VmcOsc(receiver) => receiver.is_active(),
+  }
+ }
+
+ fn source_name(&self) -> &'static str {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.source_name(),
+   Self::VmcOsc(receiver) => receiver.source_name(),
+  }
+ }
+}
+
 fn default_config_path() -> PathBuf {
  PathBuf::from("config/unvet.toml")
 }
 
-fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFrame {
+fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_source: InputSource) -> OutputFrame {
  let blend_preset = match mapping.head_eye_blend_preset {
   MappingBlendPreset::Custom => HeadEyeBlendPreset::Custom,
   MappingBlendPreset::Balanced => HeadEyeBlendPreset::Balanced,
@@ -34,10 +89,16 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFr
  };
  let (yaw_mix, pitch_mix) = resolve_head_eye_mix(blend_preset, mapping.eye_head_mix_yaw, mapping.eye_head_mix_pitch);
 
- // iFacialMocap reports horizontal/vertical in an axis order opposite to our internal yaw/pitch labels.
- // Map yaw from vertical component slot and pitch from horizontal component slot to keep control intuitive.
- let mixed_yaw = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, yaw_mix);
- let mixed_pitch = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, pitch_mix);
+ let (eye_yaw_deg, eye_pitch_deg, head_yaw_deg, head_pitch_deg) = match input_source {
+  InputSource::IfacialmocapUdp | InputSource::IfacialmocapTcp => {
+   // iFacialMocap reports horizontal/vertical in an axis order opposite to our internal yaw/pitch labels.
+   (frame.eye_pitch_deg, frame.eye_yaw_deg, frame.head_pitch_deg, frame.head_yaw_deg)
+  },
+  InputSource::VmcOsc => (frame.eye_yaw_deg, frame.eye_pitch_deg, frame.head_yaw_deg, frame.head_pitch_deg),
+ };
+
+ let mixed_yaw = mix_eye_and_head(eye_yaw_deg, head_yaw_deg, yaw_mix);
+ let mixed_pitch = mix_eye_and_head(eye_pitch_deg, head_pitch_deg, pitch_mix);
  let response_curve = match mapping.response_curve_preset {
   MappingCurvePreset::Linear => ResponseCurvePreset::Linear,
   MappingCurvePreset::Smooth => ResponseCurvePreset::Smooth,
@@ -89,13 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   info!(path = %config_path.display(), "default config generated");
  }
 
- let mut receiver_options = ReceiverOptions::default();
- receiver_options.host = config.input.host.clone();
- receiver_options.udp_port = config.input.udp_port;
- receiver_options.tcp_port = config.input.tcp_port;
- receiver_options.use_tcp = matches!(config.input.source, InputSource::IfacialmocapTcp);
-
- let mut receiver = IfacialMocapReceiver::new(receiver_options);
+ let mut receiver = ActiveInputReceiver::from_config(&config);
  if let Err(error) = receiver.connect() {
   warn!(error = %error, "input receiver startup failed; running with fallback frame for bootstrap");
  }
@@ -142,7 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
    }
 
    let calibrated_frame = calibration.apply(frame);
-   let output_frame = build_output_frame(calibrated_frame, &active_mapping);
+   let output_frame = build_output_frame(calibrated_frame, &active_mapping, config.input.source);
    let smoothed_output = if active_mapping.output_easing_enabled {
     frame_smoother.update(output_frame)
    } else {

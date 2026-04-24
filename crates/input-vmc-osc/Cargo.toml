@@ -1,0 +1,11 @@
+[package]
+name = "unvet-input-vmc-osc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+rosc = "0.11"
+glam = "0.30"
+unvet-core = { path = "../core" }

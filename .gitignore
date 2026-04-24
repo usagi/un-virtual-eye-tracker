@@ -1,4 +1,7 @@
 /target/
+/tmp/
+/release-packages/
+/release-packages-check*/
 **/*.rs.bk
 Cargo.lock
 

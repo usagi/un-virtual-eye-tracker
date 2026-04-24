@@ -8,11 +8,12 @@ use unvet_core::{AppError, AppResult, calibration::CalibrationOffsets};
 pub enum InputSource {
  IfacialmocapUdp,
  IfacialmocapTcp,
+ VmcOsc,
 }
 
 impl Default for InputSource {
  fn default() -> Self {
-  Self::IfacialmocapUdp
+  Self::VmcOsc
  }
 }
 
@@ -81,6 +82,7 @@ pub struct InputConfig {
  pub host: String,
  pub udp_port: u16,
  pub tcp_port: u16,
+ pub vmc_osc_port: u16,
 }
 
 impl Default for InputConfig {
@@ -90,6 +92,7 @@ impl Default for InputConfig {
    host: "127.0.0.1".to_owned(),
    udp_port: 49983,
    tcp_port: 49986,
+   vmc_osc_port: 39539,
   }
  }
 }

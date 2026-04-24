@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type InputSource = "ifacialmocap_udp" | "ifacialmocap_tcp";
+export type InputSource = "ifacialmocap_udp" | "ifacialmocap_tcp" | "vmc_osc";
 export type OutputBackendKind = "ets2" | "mouse" | "keyboard" | "touch";
 export type OutputSendFilterMode = "unrestricted" | "foreground_process";
 
@@ -12,6 +12,7 @@ export type RuntimeSnapshot = {
   persistSessionSettings: boolean;
   paused: boolean;
   inputSource: InputSource;
+  vmcOscPort: number;
   outputBackend: OutputBackendKind;
   outputSendFilterMode: OutputSendFilterMode;
   outputSendFilterProcessNames: string[];
@@ -78,6 +79,9 @@ export const setPaused = (paused: boolean) =>
 
 export const setInputSource = (source: InputSource) =>
   invokeRuntime<void>("set_input_source", { source });
+
+export const setVmcOscPort = (port: number) =>
+  invokeRuntime<void>("set_vmc_osc_port", { port });
 
 export const setOutputBackend = (backend: OutputBackendKind) =>
   invokeRuntime<void>("set_output_backend", { backend });

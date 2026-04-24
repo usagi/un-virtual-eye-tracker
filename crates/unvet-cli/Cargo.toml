@@ -1,5 +1,5 @@
 [package]
-name = "unvet-app"
+name = "unvet-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,6 +10,7 @@ tracing.workspace = true
 unvet-config = { path = "../config" }
 unvet-core = { path = "../core" }
 unvet-input-ifacialmocap = { path = "../input-ifacialmocap" }
+unvet-input-vmc-osc = { path = "../input-vmc-osc" }
 unvet-output = { path = "../output" }
 
 [build-dependencies]

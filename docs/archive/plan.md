@@ -808,7 +808,7 @@ GUI 詳細方針は `docs/gui-guidelines.md` を参照する。
 project-root/
   Cargo.toml
   crates/
-    app/
+    unvet-cli/
     core/
     input-ifacialmocap/
     input-vmc/

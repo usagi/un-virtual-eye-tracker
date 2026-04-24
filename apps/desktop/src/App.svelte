@@ -5,6 +5,7 @@
   listRunningProcesses,
   requestRecalibration,
   setInputSource,
+    setVmcOscPort,
   setOutputBackend,
   setOutputAxisMultipliers,
   setOutputAxisInversion,
@@ -21,6 +22,7 @@
  } from './lib/runtime'
 
  const INPUT_SOURCES: Array<{ value: InputSource; label: string }> = [
+  { value: 'vmc_osc', label: 'VMC / OSC UDP' },
   { value: 'ifacialmocap_udp', label: 'iFacialMocap UDP' },
   { value: 'ifacialmocap_tcp', label: 'iFacialMocap TCP' },
  ]
@@ -44,7 +46,8 @@
   outputClutchHotkey: 'Ctrl+Shift+E',
   persistSessionSettings: true,
   paused: false,
-  inputSource: 'ifacialmocap_udp',
+  inputSource: 'vmc_osc',
+  vmcOscPort: 39539,
   outputBackend: 'ets2',
   outputSendFilterMode: 'unrestricted',
   outputSendFilterProcessNames: [],
@@ -86,6 +89,8 @@
  const MAX_LOG_ENTRIES = 400
 const AXIS_MULTIPLIER_MIN = 0.1
 const AXIS_MULTIPLIER_MAX = 9.0
+ const VMC_OSC_PORT_MIN = 1
+ const VMC_OSC_PORT_MAX = 65535
  const AXIS_MULTIPLIER_STEP = 0.05
  const AXIS_APPLY_DEBOUNCE_MS = 100
  const AXIS_SYNC_GRACE_MS = 450
@@ -109,6 +114,9 @@ const AXIS_MULTIPLIER_MAX = 9.0
 
  let clutchHotkeyDraft = 'Ctrl+Shift+E'
  let clutchHotkeyDirty = false
+
+ let vmcOscPortDraft = 39539
+ let vmcOscPortDirty = false
 
  let yawMultiplierDraft = 1
  let pitchMultiplierDraft = 1
@@ -239,6 +247,11 @@ const AXIS_MULTIPLIER_MAX = 9.0
   return Math.min(AXIS_MULTIPLIER_MAX, Math.max(AXIS_MULTIPLIER_MIN, value))
  }
 
+ function clampVmcOscPort(value: number): number {
+  const rounded = Math.round(value)
+  return Math.min(VMC_OSC_PORT_MAX, Math.max(VMC_OSC_PORT_MIN, rounded))
+ }
+
  function clampOutputEasingAlpha(value: number): number {
   return Math.min(OUTPUT_EASING_ALPHA_MAX, Math.max(OUTPUT_EASING_ALPHA_MIN, value))
  }
@@ -343,6 +356,10 @@ const AXIS_MULTIPLIER_MAX = 9.0
    if (!clutchHotkeyDirty) {
     clutchHotkeyDraft = latest.outputClutchHotkey
    }
+
+  if (!vmcOscPortDirty) {
+   vmcOscPortDraft = latest.vmcOscPort
+  }
 
    if (Date.now() - axisLastEditAt > AXIS_SYNC_GRACE_MS) {
     yawMultiplierDraft = latest.yawOutputMultiplier
@@ -544,6 +561,30 @@ const AXIS_MULTIPLIER_MAX = 9.0
   void applyAction(`Set input source=${source}`, () => setInputSource(source))
  }
 
+ function onVmcOscPortInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  vmcOscPortDraft = clampVmcOscPort(parsed)
+  vmcOscPortDirty = vmcOscPortDraft !== snapshot.vmcOscPort
+ }
+
+ function onApplyVmcOscPort() {
+  const port = clampVmcOscPort(vmcOscPortDraft)
+  vmcOscPortDraft = port
+
+  if (port === snapshot.vmcOscPort) {
+   vmcOscPortDirty = false
+   return
+  }
+
+  void applyAction(`Set VMC/OSC UDP port=${port}`, () => setVmcOscPort(port)).finally(() => {
+   vmcOscPortDirty = vmcOscPortDraft !== snapshot.vmcOscPort
+  })
+ }
+
  function onOutputBackendChange(event: Event) {
   const backend = (event.currentTarget as HTMLSelectElement).value as OutputBackendKind
   void applyAction(`Set output backend=${backend}`, () => setOutputBackend(backend))
@@ -696,7 +737,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
   <div class="hero-copy">
    <p class="eyebrow">UNVET DESKTOP</p>
    <h1>UNVET Control Deck</h1>
-  <p class="summary">UNVET - 視線を、直感のコントロールへ。</p>
+  <p class="summary">USAGI.NETWORK Virtual Eye Tracker ― アバター向け視線トラッキングをトラックの運転へ</p>
   </div>
   <div class="hero-meta">
    <p class={`pill ${liveSendEnabled() ? 'ok' : 'warn'}`}>{liveSendEnabled() ? 'Live Send ON' : 'Live Send OFF'}</p>
@@ -790,6 +831,27 @@ const AXIS_MULTIPLIER_MAX = 9.0
       </button>
      </div>
     </div>
+
+    {#if snapshot.inputSource === 'vmc_osc'}
+     <div class="control compact">
+      <label for="vmc-osc-port-input">VMC/OSC UDP Port</label>
+      <div class="row-inline">
+       <input
+      id="vmc-osc-port-input"
+      type="number"
+      min={VMC_OSC_PORT_MIN}
+      max={VMC_OSC_PORT_MAX}
+      step="1"
+      value={vmcOscPortDraft}
+      on:input={onVmcOscPortInput}
+       />
+       <button type="button" class="action" disabled={!vmcOscPortDirty} on:click={onApplyVmcOscPort}>
+      Apply
+       </button>
+      </div>
+      <p class="hint">Current runtime port: {snapshot.vmcOscPort}</p>
+     </div>
+    {/if}
 
     <button class="recalibrate" disabled={busy} on:click={onRecalibrate}>Recalibrate Neutral Pose</button>
    </section>

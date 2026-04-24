@@ -5,10 +5,13 @@ use std::{
  time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "windows")]
+use std::process::{Child, Command, Stdio};
+
 use serde::Serialize;
 use tauri::State;
 use unvet_config::{
- AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind, OutputSendFilterConfig,
+ AppConfig, InputConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind, OutputSendFilterConfig,
  OutputSendFilterMode,
 };
 use unvet_core::{
@@ -17,9 +20,14 @@ use unvet_core::{
  mapping::{map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix, AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset},
  model::{OutputFrame, TrackingFrame},
  ports::InputReceiver,
+ AppResult,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
+use unvet_input_vmc_osc::{ReceiverOptions as VmcOscReceiverOptions, VmcOscReceiver};
 use unvet_output::{list_running_process_names, OutputBackendLayer, SendFilterStatus};
+
+#[cfg(target_os = "windows")]
+use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
 const IDLE_TIMEOUT: Duration = Duration::from_millis(250);
@@ -29,6 +37,114 @@ const AXIS_MULTIPLIER_MIN: f32 = 0.1;
 const AXIS_MULTIPLIER_MAX: f32 = 9.0;
 const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
 const OUTPUT_EASING_ALPHA_MAX: f32 = 1.0;
+
+#[cfg(target_os = "windows")]
+const TRACKIR_DUMMY_PROCESS_NAME: &str = "TrackIR.exe";
+#[cfg(target_os = "windows")]
+const TRACKIR_INSTALLER_REG_VALUE: &str = "Path";
+
+enum RuntimeInputReceiver {
+ IfacialMocap(IfacialMocapReceiver),
+ VmcOsc(VmcOscReceiver),
+}
+
+impl RuntimeInputReceiver {
+ fn from_input_config(config: &InputConfig, source: InputSource) -> Self {
+  match source {
+   InputSource::IfacialmocapUdp | InputSource::IfacialmocapTcp => {
+    let mut options = ReceiverOptions::default();
+    options.host = config.host.clone();
+    options.udp_port = config.udp_port;
+    options.tcp_port = config.tcp_port;
+    options.use_tcp = matches!(source, InputSource::IfacialmocapTcp);
+    Self::IfacialMocap(IfacialMocapReceiver::new(options))
+   },
+   InputSource::VmcOsc => {
+    let mut options = VmcOscReceiverOptions::default();
+    options.udp_port = config.vmc_osc_port;
+    Self::VmcOsc(VmcOscReceiver::new(options))
+   },
+  }
+ }
+
+ fn connect(&mut self) -> AppResult<()> {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.connect(),
+   Self::VmcOsc(receiver) => receiver.connect(),
+  }
+ }
+
+ fn disconnect(&mut self) {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.disconnect(),
+   Self::VmcOsc(receiver) => receiver.disconnect(),
+  }
+ }
+
+ fn poll_frame(&mut self) -> Option<TrackingFrame> {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.poll_frame(),
+   Self::VmcOsc(receiver) => receiver.poll_frame(),
+  }
+ }
+
+ fn is_active(&self) -> bool {
+  match self {
+   Self::IfacialMocap(receiver) => receiver.is_active(),
+   Self::VmcOsc(receiver) => receiver.is_active(),
+  }
+ }
+
+ fn idle_diagnostic_message(&self) -> Option<String> {
+  match self {
+   Self::IfacialMocap(receiver) => {
+    let stats = receiver.stats();
+    if stats.frames_parsed > 0 {
+     return None;
+    }
+
+    if stats.frames_dropped > 0 {
+     let parse_error = stats.last_error.clone().unwrap_or_else(|| "unknown parsing error".to_owned());
+     return Some(format!("tracking packets could not be parsed: {parse_error}"));
+    }
+
+    let options = receiver.options();
+    let loopback_hint = if options.host.eq_ignore_ascii_case("127.0.0.1") || options.host.eq_ignore_ascii_case("localhost") {
+     "; current input.host is loopback, so set it to your iFacialMocap device IP"
+    } else {
+     ""
+    };
+
+    Some(format!(
+     "no tracking packets received from {}:{} yet; verify iFacialMocap target IP/port and config input.host{}",
+     options.host, options.udp_port, loopback_hint
+    ))
+   },
+   Self::VmcOsc(receiver) => {
+    let stats = receiver.stats();
+    if stats.frames_emitted > 0 {
+     return None;
+    }
+
+    if stats.udp_packets_received == 0 {
+     return Some(format!(
+      "no VMC/OSC packets received yet on UDP port {}; verify sender target host/port",
+      receiver.options().udp_port
+     ));
+    }
+
+    if let Some(error) = stats.last_error.clone() {
+     return Some(format!("VMC/OSC packets were received but ignored: {error}"));
+    }
+
+    Some(format!(
+     "VMC/OSC packets were received on UDP port {} but no usable head pose was found; verify /VMC/Ext/Bone/Pos for Head",
+     receiver.options().udp_port
+    ))
+   },
+  }
+ }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +156,7 @@ struct RuntimeSnapshot {
  persist_session_settings: bool,
  paused: bool,
  input_source: InputSource,
+ vmc_osc_port: u16,
  output_backend: OutputBackendKind,
  output_send_filter_mode: OutputSendFilterMode,
  output_send_filter_process_names: Vec<String>,
@@ -70,6 +187,7 @@ impl RuntimeSnapshot {
    persist_session_settings: restore,
    paused: false,
    input_source: if restore { config.input.source } else { InputSource::default() },
+   vmc_osc_port: config.input.vmc_osc_port,
    output_backend: if restore {
     config.output.backend
    } else {
@@ -129,6 +247,7 @@ impl RuntimeSnapshot {
 struct RuntimeShared {
  config_path: PathBuf,
  desired_input_source: InputSource,
+ desired_vmc_osc_port: u16,
  desired_output_backend: OutputBackendKind,
  desired_output_send_filter: OutputSendFilterConfig,
  desired_output_enabled: bool,
@@ -157,6 +276,7 @@ impl RuntimeState {
    shared: Arc::new(Mutex::new(RuntimeShared {
     config_path,
     desired_input_source: snapshot.input_source,
+    desired_vmc_osc_port: snapshot.vmc_osc_port,
     desired_output_backend: snapshot.output_backend,
     desired_output_send_filter: OutputSendFilterConfig {
      mode: snapshot.output_send_filter_mode,
@@ -182,6 +302,7 @@ impl RuntimeState {
 #[derive(Debug, Clone)]
 struct RuntimeDesired {
  input_source: InputSource,
+ vmc_osc_port: u16,
  output_backend: OutputBackendKind,
  output_send_filter: OutputSendFilterConfig,
  output_enabled: bool,
@@ -320,6 +441,21 @@ fn set_input_source(source: InputSource, state: State<RuntimeState>) {
 }
 
 #[tauri::command]
+fn set_vmc_osc_port(port: u16, state: State<RuntimeState>) -> Result<(), String> {
+ if port == 0 {
+  return Err("port must be in range 1-65535".to_owned());
+ }
+
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_vmc_osc_port = port;
+ guard.snapshot.vmc_osc_port = port;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+ Ok(())
+}
+
+#[tauri::command]
 fn set_output_backend(backend: OutputBackendKind, state: State<RuntimeState>) {
  let mut guard = state.shared.lock().expect("runtime state lock");
  guard.desired_output_backend = backend;
@@ -364,6 +500,21 @@ pub fn run() {
  let (config, config_path) = load_config_or_default();
  let runtime_state = RuntimeState::new(&config, config_path);
 
+ #[cfg(target_os = "windows")]
+ let _trackir_dummy_process = {
+  if let Err(error) = configure_trackir_compatibility_registry() {
+   log::warn!("TrackIR registry setup failed: {error}");
+  }
+
+  match start_trackir_dummy_process() {
+   Ok(process) => Some(process),
+   Err(error) => {
+    log::warn!("TrackIR dummy process startup failed: {error}");
+    None
+   },
+  }
+ };
+
  spawn_runtime_loop(runtime_state.shared.clone(), config);
 
  tauri::Builder::default()
@@ -379,6 +530,7 @@ pub fn run() {
    set_output_easing,
    set_paused,
    set_input_source,
+   set_vmc_osc_port,
    set_output_backend,
    set_output_send_filter,
    list_running_processes,
@@ -394,6 +546,111 @@ pub fn run() {
   })
   .run(tauri::generate_context!())
   .expect("error while running tauri application");
+}
+
+#[cfg(target_os = "windows")]
+struct TrackIrDummyProcess(Child);
+
+#[cfg(target_os = "windows")]
+impl Drop for TrackIrDummyProcess {
+ fn drop(&mut self) {
+  let _ = self.0.kill();
+  let _ = self.0.wait();
+ }
+}
+
+#[cfg(target_os = "windows")]
+fn configure_trackir_compatibility_registry() -> Result<(), String> {
+ let binary_dir = std::env::current_exe()
+  .map_err(|error| format!("failed to resolve current executable path: {error}"))?
+  .parent()
+  .ok_or_else(|| "failed to resolve executable directory".to_owned())?
+  .to_path_buf();
+
+ let npclient64_path = binary_dir.join("NPClient64.dll");
+ if !npclient64_path.exists() {
+  return Err(format!("NPClient64.dll not found at {}", npclient64_path.display()));
+ }
+
+ let npclient_path = binary_dir.join("NPClient.dll");
+ if !npclient_path.exists() {
+  std::fs::copy(&npclient64_path, &npclient_path).map_err(|error| {
+   format!(
+    "failed to materialize NPClient.dll from NPClient64.dll ({} -> {}): {error}",
+    npclient64_path.display(),
+    npclient_path.display()
+   )
+  })?;
+ }
+
+ let mut registry_dir_value = binary_dir.to_string_lossy().to_string();
+ if !registry_dir_value.ends_with('\\') {
+  registry_dir_value.push('\\');
+ }
+ let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+ write_trackir_registry_path(&hkcu, r"Software\NaturalPoint\NATURALPOINT\NPClient Location", &registry_dir_value)?;
+ write_trackir_registry_path(
+  &hkcu,
+  r"Software\NaturalPoint\NATURALPOINT\NPClient64 Location",
+  &registry_dir_value,
+ )?;
+ write_trackir_registry_path(&hkcu, r"Software\NaturalPoint\NaturalPoint\NPClient Location", &registry_dir_value)?;
+ write_trackir_registry_path(
+  &hkcu,
+  r"Software\NaturalPoint\NaturalPoint\NPClient64 Location",
+  &registry_dir_value,
+ )?;
+ write_trackir_registry_path(&hkcu, r"Software\Freetrack\FreeTrackClient", &registry_dir_value)?;
+ write_trackir_registry_path(&hkcu, r"Software\Freetrack\FreetrackClient", &registry_dir_value)?;
+
+ Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn write_trackir_registry_path(hkcu: &RegKey, key_path: &str, value: &str) -> Result<(), String> {
+ let (key, _) = hkcu
+  .create_subkey(key_path)
+  .map_err(|error| format!("failed to create registry key {key_path}: {error}"))?;
+ key
+  .set_value("", &value)
+  .map_err(|error| format!("failed to write default value for {key_path}: {error}"))?;
+ key
+  .set_value(TRACKIR_INSTALLER_REG_VALUE, &value)
+  .map_err(|error| format!("failed to write Path value for {key_path}: {error}"))?;
+
+ let path_subkey = format!(r"{key_path}\{TRACKIR_INSTALLER_REG_VALUE}");
+ let (path_key, _) = hkcu
+  .create_subkey(&path_subkey)
+  .map_err(|error| format!("failed to create registry key {path_subkey}: {error}"))?;
+ path_key
+  .set_value("", &value)
+  .map_err(|error| format!("failed to write default value for {path_subkey}: {error}"))?;
+
+ Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn start_trackir_dummy_process() -> Result<TrackIrDummyProcess, String> {
+ let binary_dir = std::env::current_exe()
+  .map_err(|error| format!("failed to resolve current executable path: {error}"))?
+  .parent()
+  .ok_or_else(|| "failed to resolve executable directory".to_owned())?
+  .to_path_buf();
+
+ let trackir_dummy_path = binary_dir.join(TRACKIR_DUMMY_PROCESS_NAME);
+ if !trackir_dummy_path.exists() {
+  return Err(format!("TrackIR dummy process not found at {}", trackir_dummy_path.display()));
+ }
+
+ let child = Command::new(&trackir_dummy_path)
+  .stdin(Stdio::null())
+  .stdout(Stdio::null())
+  .stderr(Stdio::null())
+  .spawn()
+  .map_err(|error| format!("failed to spawn TrackIR dummy process {}: {error}", trackir_dummy_path.display()))?;
+
+ Ok(TrackIrDummyProcess(child))
 }
 
 fn load_config_or_default() -> (AppConfig, PathBuf) {
@@ -428,15 +685,10 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
   let mut calibration = build_calibration(&config);
 
-  let mut receiver_options = ReceiverOptions::default();
-  receiver_options.host = config.input.host.clone();
-  receiver_options.udp_port = config.input.udp_port;
-  receiver_options.tcp_port = config.input.tcp_port;
-  receiver_options.use_tcp = matches!(config.input.source, InputSource::IfacialmocapTcp);
-
-  let mut receiver = IfacialMocapReceiver::new(receiver_options);
+  let mut active_input_config = config.input.clone();
+  let mut receiver = RuntimeInputReceiver::from_input_config(&active_input_config, active_input_config.source);
   let mut output_layer = OutputBackendLayer::new(&config.output);
-  let mut active_input_source = config.input.source;
+  let mut active_input_source = active_input_config.source;
   let mut active_backend = config.output.backend;
   let mut active_send_filter = config.output.send_filter.clone();
   let mut last_reconnect_attempt_at = Instant::now();
@@ -481,12 +733,23 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     }
    }
 
+   let mut input_needs_reconnect = false;
+   if desired.vmc_osc_port != active_input_config.vmc_osc_port {
+    active_input_config.vmc_osc_port = desired.vmc_osc_port;
+    if matches!(active_input_source, InputSource::VmcOsc) {
+     input_needs_reconnect = true;
+    }
+   }
+
    if desired.input_source != active_input_source {
-    receiver.disconnect();
-    let mut options = receiver.options().clone();
-    options.use_tcp = matches!(desired.input_source, InputSource::IfacialmocapTcp);
-    receiver = IfacialMocapReceiver::new(options);
+    active_input_config.source = desired.input_source;
     active_input_source = desired.input_source;
+    input_needs_reconnect = true;
+   }
+
+   if input_needs_reconnect {
+    receiver.disconnect();
+    receiver = RuntimeInputReceiver::from_input_config(&active_input_config, active_input_source);
     if let Err(error) = receiver.connect() {
      set_snapshot_error(&shared, format!("input reconnect failed: {error}"));
     } else {
@@ -556,7 +819,7 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     }
 
     let calibrated_frame = calibration.apply(frame);
-    let output_frame = build_output_frame(calibrated_frame, &active_mapping);
+    let output_frame = build_output_frame(calibrated_frame, &active_mapping, active_input_source);
     let smoothed_output = if active_mapping.output_easing_enabled {
      frame_smoother.update(output_frame)
     } else {
@@ -586,26 +849,8 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     let input_live = receiver.is_active() && last_frame_at.elapsed() < INPUT_LIVE_TIMEOUT;
 
     if receiver.is_active() && !input_live {
-     let stats = receiver.stats();
-     if stats.frames_parsed == 0 {
-      if stats.frames_dropped > 0 {
-       let parse_error = stats.last_error.clone().unwrap_or_else(|| "unknown parsing error".to_owned());
-       set_snapshot_error(&shared, format!("tracking packets could not be parsed: {parse_error}"));
-      } else {
-       let options = receiver.options();
-       let loopback_hint = if options.host.eq_ignore_ascii_case("127.0.0.1") || options.host.eq_ignore_ascii_case("localhost") {
-        "; current input.host is loopback, so set it to your iFacialMocap device IP"
-       } else {
-        ""
-       };
-       set_snapshot_error(
-        &shared,
-        format!(
-         "no tracking packets received from {}:{} yet; verify iFacialMocap target IP/port and config input.host{}",
-         options.host, options.udp_port, loopback_hint
-        ),
-       );
-      }
+     if let Some(message) = receiver.idle_diagnostic_message() {
+      set_snapshot_error(&shared, message);
      }
     }
 
@@ -651,6 +896,7 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
 
  RuntimeDesired {
   input_source: guard.desired_input_source,
+  vmc_osc_port: guard.desired_vmc_osc_port,
   output_backend: guard.desired_output_backend,
   output_send_filter: guard.desired_output_send_filter.clone(),
   output_enabled: guard.desired_output_enabled,
@@ -769,6 +1015,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   config_path,
   persist_session_settings,
   input_source,
+  vmc_osc_port,
   output_backend,
   output_enabled,
   output_send_filter_mode,
@@ -785,6 +1032,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.config_path.clone(),
    guard.snapshot.persist_session_settings,
    guard.snapshot.input_source,
+   guard.snapshot.vmc_osc_port,
    guard.snapshot.output_backend,
    guard.snapshot.output_enabled,
    guard.snapshot.output_send_filter_mode,
@@ -804,6 +1052,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
 
  let mut config = AppConfig::load_or_default(&config_path).map_err(|error| format!("failed to load config for persistence: {error}"))?;
  config.input.source = input_source;
+ config.input.vmc_osc_port = vmc_osc_port;
  config.output.backend = output_backend;
  config.output.enabled = output_enabled;
  config.output.send_filter = OutputSendFilterConfig {
@@ -872,7 +1121,7 @@ fn build_calibration(config: &AppConfig) -> NeutralPoseCalibration {
  }
 }
 
-fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFrame {
+fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_source: InputSource) -> OutputFrame {
  let blend_preset = match mapping.head_eye_blend_preset {
   MappingBlendPreset::Custom => HeadEyeBlendPreset::Custom,
   MappingBlendPreset::Balanced => HeadEyeBlendPreset::Balanced,
@@ -881,10 +1130,16 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig) -> OutputFr
  };
  let (yaw_mix, pitch_mix) = resolve_head_eye_mix(blend_preset, mapping.eye_head_mix_yaw, mapping.eye_head_mix_pitch);
 
- // iFacialMocap reports horizontal/vertical in an axis order opposite to our internal yaw/pitch labels.
- // Map yaw from vertical component slot and pitch from horizontal component slot to keep control intuitive.
- let mixed_yaw = mix_eye_and_head(frame.eye_pitch_deg, frame.head_pitch_deg, yaw_mix);
- let mixed_pitch = mix_eye_and_head(frame.eye_yaw_deg, frame.head_yaw_deg, pitch_mix);
+ let (eye_yaw_deg, eye_pitch_deg, head_yaw_deg, head_pitch_deg) = match input_source {
+  InputSource::IfacialmocapUdp | InputSource::IfacialmocapTcp => {
+   // iFacialMocap reports horizontal/vertical in an axis order opposite to our internal yaw/pitch labels.
+   (frame.eye_pitch_deg, frame.eye_yaw_deg, frame.head_pitch_deg, frame.head_yaw_deg)
+  },
+  InputSource::VmcOsc => (frame.eye_yaw_deg, frame.eye_pitch_deg, frame.head_yaw_deg, frame.head_pitch_deg),
+ };
+
+ let mixed_yaw = mix_eye_and_head(eye_yaw_deg, head_yaw_deg, yaw_mix);
+ let mixed_pitch = mix_eye_and_head(eye_pitch_deg, head_pitch_deg, pitch_mix);
  let response_curve = match mapping.response_curve_preset {
   MappingCurvePreset::Linear => ResponseCurvePreset::Linear,
   MappingCurvePreset::Smooth => ResponseCurvePreset::Smooth,

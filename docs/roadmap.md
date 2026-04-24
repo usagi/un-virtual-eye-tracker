@@ -49,3 +49,19 @@
 
 - Prefix with phase id: `alpha-4`, `beta-1`, `gamma-2`
 - Keep one functional objective per commit
+
+## Compliance Gate (Compatibility Work)
+
+- [x] legal-1 chore(docs): add clean-room compatibility policy
+- [ ] legal-2 chore(process): require black-box observation note in compatibility PRs
+- [x] legal-3 test(process): add lightweight guard to block proprietary-source references
+
+## Recent Completed Work
+
+- [x] zeta-1 feat(input): add VMC/OSC UDP receiver crate and runtime wiring
+- [x] zeta-1 feat(ui): add VMC / OSC UDP input source selection in desktop UI
+- [x] zeta-2 feat(ui): add runtime-editable VMC / OSC UDP port in desktop UI
+- [x] eta-1 feat(compat): add NPClient-compatible shim and TrackIR helper bootstrap for ETS2/ATS
+- [x] eta-1 feat(build): emit NPClient64.dll, NPClient.dll, and TrackIR.exe in desktop build outputs
+- [x] eta-2 chore(release): add portable package script `tools/make-release-package.ps1`
+- [x] eta-3 feat(compat): add `unvet-uninstall-compatible-layers.exe` for compatibility-layer cleanup

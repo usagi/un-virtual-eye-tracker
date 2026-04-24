@@ -1,9 +1,9 @@
 [package]
 name = "unvet-desktop"
-version = "0.1.0"
+version = "1.0.0"
 description = "UNVET desktop control UI"
 authors = ["UNVET Contributors"]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/usagi/un-virtual-eye-tracker"
 edition = "2021"
 rust-version = "1.77.2"
@@ -26,4 +26,8 @@ tauri-plugin-log = "2"
 unvet-config = { path = "../../../crates/config" }
 unvet-core = { path = "../../../crates/core" }
 unvet-input-ifacialmocap = { path = "../../../crates/input-ifacialmocap" }
+unvet-input-vmc-osc = { path = "../../../crates/input-vmc-osc" }
 unvet-output = { path = "../../../crates/output" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.52"
