@@ -24,7 +24,8 @@ fn main() {
 }
 
 fn build_frontend_dist() {
- if env::var("UNVET_SKIP_FRONTEND_BUILD").ok().as_deref() == Some("1") {
+ if should_skip_frontend_build() {
+    println!("cargo:warning=skipping frontend build because UNVET_SKIP_FRONTEND_BUILD=1 in CI");
   return;
  }
 
@@ -45,6 +46,15 @@ fn build_frontend_dist() {
  if !status.success() {
   panic!("frontend build failed with status: {status}");
  }
+}
+
+fn should_skip_frontend_build() -> bool {
+ let skip_requested = env::var("UNVET_SKIP_FRONTEND_BUILD").ok().as_deref() == Some("1");
+ let running_in_ci = env::var("CI")
+  .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+  .unwrap_or(false);
+
+ skip_requested && running_in_ci
 }
 
 fn build_npclient_shims() {
