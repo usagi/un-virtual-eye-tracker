@@ -1,5 +1,5 @@
 use unvet_config::{OutputBackendKind, OutputConfig, OutputSendFilterConfig, OutputSendFilterMode};
-use unvet_core::{model::OutputFrame, ports::OutputBackend, AppError, AppResult};
+use unvet_core::{AppError, AppResult, model::OutputFrame, ports::OutputBackend};
 
 struct BackendEntry {
  kind: OutputBackendKind,
@@ -350,9 +350,9 @@ fn running_process_names_platform() -> AppResult<Vec<String>> {
 mod tests {
  use std::sync::{Arc, Mutex};
 
- use super::{process_name_matches_filter, OutputBackendLayer};
+ use super::{OutputBackendLayer, process_name_matches_filter};
  use unvet_config::{OutputBackendKind, OutputSendFilterConfig, OutputSendFilterMode};
- use unvet_core::{model::OutputFrame, ports::OutputBackend, AppResult};
+ use unvet_core::{AppResult, model::OutputFrame, ports::OutputBackend};
 
  fn unrestricted_filter() -> OutputSendFilterConfig {
   OutputSendFilterConfig::default()
