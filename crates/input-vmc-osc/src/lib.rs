@@ -2,9 +2,9 @@ use std::{
  collections::HashSet,
  net::{SocketAddr, ToSocketAddrs, UdpSocket},
  sync::{
-  atomic::{AtomicBool, AtomicU64, Ordering},
-  mpsc::{sync_channel, SyncSender, TrySendError},
   Arc, Mutex,
+  atomic::{AtomicBool, AtomicU64, Ordering},
+  mpsc::{SyncSender, TrySendError, sync_channel},
  },
  thread::{self, JoinHandle},
  time::{Duration, SystemTime, UNIX_EPOCH},
@@ -13,9 +13,9 @@ use std::{
 use glam::{EulerRot, Quat};
 use rosc::{OscMessage, OscPacket, OscType};
 use unvet_core::{
+ AppError, AppResult,
  model::{RawTrackingFrame, TrackingFrame},
  ports::InputReceiver,
- AppError, AppResult,
 };
 
 pub const VMC_OSC_DEFAULT_PORT: u16 = 39539;
@@ -862,7 +862,7 @@ fn is_self_loop_target(host: &str, port: u16, listen_port: u16) -> bool {
 mod tests {
  use std::{net::UdpSocket, thread, time::Duration};
 
- use super::{parse_tracking_frame_from_packet, quaternion_to_rotation_deg, ConnectionState, ReceiverOptions, VmcOscReceiver};
+ use super::{ConnectionState, ReceiverOptions, VmcOscReceiver, parse_tracking_frame_from_packet, quaternion_to_rotation_deg};
  use glam::{EulerRot, Quat};
  use rosc::{OscMessage, OscPacket, OscType};
  use unvet_core::ports::InputReceiver;
@@ -1105,10 +1105,12 @@ mod tests {
   receiver.connect().expect("connect VMC receiver");
 
   assert_eq!(receiver.stats().passthrough_targets_active, 1);
-  assert!(receiver
-   .stats()
-   .passthrough_last_warning
-   .as_ref()
-   .is_some_and(|message| message.contains("self-loop")));
+  assert!(
+   receiver
+    .stats()
+    .passthrough_last_warning
+    .as_ref()
+    .is_some_and(|message| message.contains("self-loop"))
+  );
  }
 }

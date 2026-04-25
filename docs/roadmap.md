@@ -68,6 +68,10 @@
 
 ## Planned Next Release (v1.1.0)
 
-- [ ] theta-1 feat(input): add VMC/OSC passthrough (raw UDP fan-out for multiple local targets)
-- [ ] theta-1 feat(ui): add Desktop GUI editor for passthrough enabled/mode/targets
+- [x] theta-1 feat(input): add VMC/OSC passthrough (raw UDP fan-out for multiple local targets)
+- [x] theta-1 feat(ui): add Desktop GUI editor for passthrough enabled/mode/targets
 - Plan detail: `docs/release-1.1.0.md`
+
+## Known Constraints / Decisions
+
+- [x] Waidayo Send Motion Port 受信対応は見送り: 受信実験の結果、Waidayo の Send Motion Port は VMCP (公開 VMC/OSC) ではなく Waidayo mode の非公開プロトコルであることを確認。UNVET は公開仕様ベース実装を維持するため、この経路の直接対応は行わない。
