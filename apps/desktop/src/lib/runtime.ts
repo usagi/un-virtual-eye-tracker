@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type InputSource = "ifacialmocap_udp" | "ifacialmocap_tcp" | "vmc_osc";
 export type OutputBackendKind = "ets2" | "mouse" | "keyboard" | "touch";
 export type OutputSendFilterMode = "unrestricted" | "foreground_process";
+export type VmcOscPassthroughMode = "raw_udp_forward";
 
 export type RuntimeSnapshot = {
   inputConnected: boolean;
@@ -13,6 +14,9 @@ export type RuntimeSnapshot = {
   paused: boolean;
   inputSource: InputSource;
   vmcOscPort: number;
+  vmcOscPassthroughEnabled: boolean;
+  vmcOscPassthroughMode: VmcOscPassthroughMode;
+  vmcOscPassthroughTargets: string[];
   outputBackend: OutputBackendKind;
   outputSendFilterMode: OutputSendFilterMode;
   outputSendFilterProcessNames: string[];
@@ -82,6 +86,15 @@ export const setInputSource = (source: InputSource) =>
 
 export const setVmcOscPort = (port: number) =>
   invokeRuntime<void>("set_vmc_osc_port", { port });
+
+export const setVmcOscPassthroughEnabled = (enabled: boolean) =>
+  invokeRuntime<void>("set_vmc_osc_passthrough_enabled", { enabled });
+
+export const setVmcOscPassthroughMode = (mode: VmcOscPassthroughMode) =>
+  invokeRuntime<void>("set_vmc_osc_passthrough_mode", { mode });
+
+export const setVmcOscPassthroughTargets = (targets: string[]) =>
+  invokeRuntime<void>("set_vmc_osc_passthrough_targets", { targets });
 
 export const setOutputBackend = (backend: OutputBackendKind) =>
   invokeRuntime<void>("set_output_backend", { backend });

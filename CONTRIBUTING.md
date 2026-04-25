@@ -12,6 +12,7 @@ Thank you for contributing to UNVET.
 ## Development Setup
 
 ### Prerequisites
+
 - Rust stable toolchain
 - Node.js 20+
 - Windows is the primary target platform

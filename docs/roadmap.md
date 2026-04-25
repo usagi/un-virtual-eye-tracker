@@ -65,3 +65,9 @@
 - [x] eta-1 feat(build): emit NPClient64.dll, NPClient.dll, and TrackIR.exe in desktop build outputs
 - [x] eta-2 chore(release): add portable package script `tools/make-release-package.ps1`
 - [x] eta-3 feat(compat): add `unvet-uninstall-compatible-layers.exe` for compatibility-layer cleanup
+
+## Planned Next Release (v1.1.0)
+
+- [ ] theta-1 feat(input): add VMC/OSC passthrough (raw UDP fan-out for multiple local targets)
+- [ ] theta-1 feat(ui): add Desktop GUI editor for passthrough enabled/mode/targets
+- Plan detail: `docs/release-1.1.0.md`

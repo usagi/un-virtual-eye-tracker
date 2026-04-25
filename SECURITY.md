@@ -14,9 +14,11 @@ Security fixes are provided for the latest release line.
 Please report vulnerabilities privately.
 
 Preferred method:
+
 - Use GitHub Security Advisories ("Report a vulnerability") for this repository.
 
 If private reporting through GitHub is not available in your environment:
+
 - Open an issue with minimal details and request a private contact channel.
 - Do not publish exploit details, proof-of-concept code, or sensitive data in public issues.
 

@@ -19,6 +19,18 @@ impl Default for InputSource {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum VmcOscPassthroughMode {
+ RawUdpForward,
+}
+
+impl Default for VmcOscPassthroughMode {
+ fn default() -> Self {
+  Self::RawUdpForward
+ }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum OutputBackendKind {
  Ets2,
  Mouse,
@@ -93,6 +105,24 @@ impl Default for InputConfig {
    udp_port: 49983,
    tcp_port: 49986,
    vmc_osc_port: 39539,
+  }
+ }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct VmcOscPassthroughConfig {
+ pub enabled: bool,
+ pub targets: Vec<String>,
+ pub mode: VmcOscPassthroughMode,
+}
+
+impl Default for VmcOscPassthroughConfig {
+ fn default() -> Self {
+  Self {
+   enabled: false,
+   targets: Vec::new(),
+   mode: VmcOscPassthroughMode::default(),
   }
  }
 }
@@ -328,6 +358,7 @@ impl CalibrationConfig {
 #[serde(default)]
 pub struct AppConfig {
  pub input: InputConfig,
+ pub vmc_osc_passthrough: VmcOscPassthroughConfig,
  pub output: OutputConfig,
  pub mapping: MappingConfig,
  pub mapping_profiles: MappingProfilesConfig,
@@ -441,5 +472,25 @@ process_names = ["eurotrucks2.exe", "amtrucks.exe"]
    config.output.send_filter.process_names,
    vec!["eurotrucks2.exe".to_owned(), "amtrucks.exe".to_owned()]
   );
+ }
+
+ #[test]
+ fn vmc_osc_passthrough_can_parse_targets() {
+  let config = AppConfig::from_toml(
+   r#"
+  [vmc_osc_passthrough]
+  enabled = true
+  targets = ["127.0.0.1:39539", "127.0.0.1:39541"]
+  mode = "raw_udp_forward"
+  "#,
+  )
+  .expect("parse vmc_osc_passthrough config");
+
+  assert!(config.vmc_osc_passthrough.enabled);
+  assert_eq!(
+   config.vmc_osc_passthrough.targets,
+   vec!["127.0.0.1:39539".to_owned(), "127.0.0.1:39541".to_owned()]
+  );
+  assert_eq!(config.vmc_osc_passthrough.mode, VmcOscPassthroughMode::RawUdpForward);
  }
 }

@@ -6,18 +6,21 @@ use std::{
 };
 
 use tracing::{info, warn};
-use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset};
+use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, VmcOscPassthroughMode};
 use unvet_core::{
- AppResult,
  calibration::NeutralPoseCalibration,
  filter::OutputFrameSmoother,
  logging,
- mapping::{AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset, map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix},
+ mapping::{map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix, AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset},
  model::{OutputFrame, TrackingFrame},
  ports::InputReceiver,
+ AppResult,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
-use unvet_input_vmc_osc::{ReceiverOptions as VmcOscReceiverOptions, VmcOscReceiver};
+use unvet_input_vmc_osc::{
+ PassthroughMode as VmcReceiverPassthroughMode, PassthroughOptions as VmcReceiverPassthroughOptions,
+ ReceiverOptions as VmcOscReceiverOptions, VmcOscReceiver,
+};
 use unvet_output::OutputBackendLayer;
 
 const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
@@ -42,6 +45,13 @@ impl ActiveInputReceiver {
    InputSource::VmcOsc => {
     let mut options = VmcOscReceiverOptions::default();
     options.udp_port = config.input.vmc_osc_port;
+    options.passthrough = VmcReceiverPassthroughOptions {
+     enabled: config.vmc_osc_passthrough.enabled,
+     targets: config.vmc_osc_passthrough.targets.clone(),
+     mode: match config.vmc_osc_passthrough.mode {
+      VmcOscPassthroughMode::RawUdpForward => VmcReceiverPassthroughMode::RawUdpForward,
+     },
+    };
     Self::VmcOsc(VmcOscReceiver::new(options))
    },
   }
@@ -179,6 +189,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  );
 
  loop {
+  let output_live = config.output.enabled;
+
   if !receiver.is_active() && last_reconnect_attempt_at.elapsed() >= reconnect_interval {
    match receiver.connect() {
     Ok(()) => info!(receiver = receiver.source_name(), "input receiver reconnected"),
@@ -204,13 +216,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     frame_smoother.reset();
     output_frame
    };
-   output_layer.apply(smoothed_output)?;
+   if output_live {
+    output_layer.apply(smoothed_output)?;
+   }
 
    last_frame_at = Instant::now();
    forced_idle_output = false;
   } else if !forced_idle_output && last_frame_at.elapsed() >= no_frame_idle_timeout {
    // On temporary tracking loss, send an inactive frame once to avoid stuck output state.
-   output_layer.apply(OutputFrame::default())?;
+   if output_live {
+    output_layer.apply(OutputFrame::default())?;
+   }
    forced_idle_output = true;
   }
 

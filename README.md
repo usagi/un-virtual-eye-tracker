@@ -33,6 +33,33 @@ iFacialMocap(iPhone/iPad)やVMC Protocol(VMC/Waidayo/WebcamMotionCapture/VSeeFac
 
 ※UNVETには出力クラッチ機能があります。デフォルトではCTRL+SHIFT+Eで出力するかどうかをトグルできます。Absolute Pointer出力などで解除したくなった際に使うとよいかもしれません。
 
+## VMC/OSC パススルー (Waidayo -> UNVET -> Warudo)
+
+UNVETはVMC/OSC入力を受け取りながら、同時に生のUDPパケットを別アプリへパススルーできます。
+
+- 例: Waidayo -> UNVET -> Warudo
+- 用途: UNVETでETS2/ATSやマウス/キーボード出力を行いつつ、同じ入力をWarudoなどでも同時利用
+
+設定方法:
+
+1. Input Sourceで `VMC / OSC UDP` を選択
+2. `VMC OSC Passthrough` を有効化
+3. 転送先を `host:port` 形式で追加（例: `127.0.0.1:39541`）
+
+設定ファイルでの例:
+
+```toml
+[vmc_osc_passthrough]
+enabled = true
+targets = ["127.0.0.1:39541"]
+mode = "raw_udp_forward"
+```
+
+注意:
+
+- パススルー先にUNVET自身の受信ポートを指定すると自己ループになるため、自動的に除外されます。
+- 元入力のキャプチャFPSが低い場合、パススルー先も同じく低FPSになります。
+
 ## おすすめの入力ソース
 
 ### Waidayo; Face ID に対応した世代の iPhone/iPad を使える場合

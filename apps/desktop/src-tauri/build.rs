@@ -25,7 +25,7 @@ fn main() {
 
 fn build_frontend_dist() {
  if should_skip_frontend_build() {
-    println!("cargo:warning=skipping frontend build because UNVET_SKIP_FRONTEND_BUILD=1 in CI");
+  println!("cargo:warning=skipping frontend build because UNVET_SKIP_FRONTEND_BUILD=1 in CI");
   return;
  }
 

@@ -6,6 +6,7 @@
 
 - [architecture.md](architecture.md): 現在の実装アーキテクチャ
 - [roadmap.md](roadmap.md): 実装ロードマップと完了状況
+- [release-1.1.0.md](release-1.1.0.md): v1.1.0 単一機能（VMC/OSC パススルー）計画
 - [gui-guidelines.md](gui-guidelines.md): GUI運用方針
 - [clean-room-compatibility.md](clean-room-compatibility.md): 互換実装のクリーンルーム方針
 

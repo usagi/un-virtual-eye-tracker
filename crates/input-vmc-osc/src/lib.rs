@@ -1,19 +1,39 @@
 use std::{
- net::UdpSocket,
+ collections::HashSet,
+ net::{SocketAddr, ToSocketAddrs, UdpSocket},
+ sync::{
+  atomic::{AtomicBool, AtomicU64, Ordering},
+  mpsc::{sync_channel, SyncSender, TrySendError},
+  Arc, Mutex,
+ },
+ thread::{self, JoinHandle},
  time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use glam::{EulerRot, Quat};
 use rosc::{OscMessage, OscPacket, OscType};
 use unvet_core::{
- AppError, AppResult,
  model::{RawTrackingFrame, TrackingFrame},
  ports::InputReceiver,
+ AppError, AppResult,
 };
 
 pub const VMC_OSC_DEFAULT_PORT: u16 = 39539;
 const RECEIVE_BUFFER_BYTES: usize = 64 * 1024;
 const DEFAULT_EYE_BLEND_MAX_ANGLE_DEG: f32 = 35.0;
+const PASSTHROUGH_QUEUE_CAPACITY: usize = 512;
+const SOCKET_READ_TIMEOUT_MS: u64 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassthroughMode {
+ RawUdpForward,
+}
+
+impl Default for PassthroughMode {
+ fn default() -> Self {
+  Self::RawUdpForward
+ }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
@@ -26,12 +46,21 @@ pub enum ConnectionState {
 #[derive(Debug, Clone)]
 pub struct ReceiverOptions {
  pub udp_port: u16,
+ pub passthrough: PassthroughOptions,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PassthroughOptions {
+ pub enabled: bool,
+ pub targets: Vec<String>,
+ pub mode: PassthroughMode,
 }
 
 impl Default for ReceiverOptions {
  fn default() -> Self {
   Self {
    udp_port: VMC_OSC_DEFAULT_PORT,
+   passthrough: PassthroughOptions::default(),
   }
  }
 }
@@ -42,6 +71,11 @@ pub struct ReceiverStats {
  pub osc_packets_decoded: u64,
  pub frames_emitted: u64,
  pub frames_ignored: u64,
+ pub passthrough_targets_active: usize,
+ pub passthrough_packets_forwarded: u64,
+ pub passthrough_packets_failed: u64,
+ pub passthrough_packets_dropped: u64,
+ pub passthrough_last_warning: Option<String>,
  pub last_packet_timestamp_ms: Option<u64>,
  pub last_error: Option<String>,
 }
@@ -52,8 +86,155 @@ pub struct VmcOscReceiver {
  active: bool,
  buffered_frame: Option<TrackingFrame>,
  socket: Option<UdpSocket>,
- receive_buffer: [u8; RECEIVE_BUFFER_BYTES],
+ passthrough_targets: Vec<SocketAddr>,
+ passthrough_worker: Option<PassthroughWorker>,
+ reader_stop: Arc<AtomicBool>,
+ reader_handle: Option<JoinHandle<()>>,
+ reader_shared: Arc<Mutex<ReaderRuntimeShared>>,
+ latest_frame_shared: Arc<Mutex<Option<TrackingFrame>>>,
  stats: ReceiverStats,
+}
+
+#[derive(Default)]
+struct ReaderRuntimeShared {
+ udp_packets_received: u64,
+ osc_packets_decoded: u64,
+ frames_emitted: u64,
+ frames_ignored: u64,
+ last_packet_timestamp_ms: Option<u64>,
+ last_error: Option<String>,
+}
+
+#[derive(Clone)]
+struct PassthroughDispatch {
+ sender: SyncSender<Vec<u8>>,
+ dropped_packets: Arc<AtomicU64>,
+ last_warning: Arc<Mutex<Option<String>>>,
+}
+
+impl PassthroughDispatch {
+ fn forward_payload(&self, payload: &[u8]) -> Option<String> {
+  match self.sender.try_send(payload.to_vec()) {
+   Ok(()) => None,
+   Err(TrySendError::Full(_payload)) => {
+    self.dropped_packets.fetch_add(1, Ordering::Relaxed);
+    let warning = "passthrough queue is full; dropping packet".to_owned();
+    if let Ok(mut guard) = self.last_warning.lock() {
+     *guard = Some(warning.clone());
+    }
+    Some(warning)
+   },
+   Err(TrySendError::Disconnected(_payload)) => {
+    self.dropped_packets.fetch_add(1, Ordering::Relaxed);
+    let warning = "passthrough worker is disconnected; dropping packet".to_owned();
+    if let Ok(mut guard) = self.last_warning.lock() {
+     *guard = Some(warning.clone());
+    }
+    Some(warning)
+   },
+  }
+ }
+}
+
+#[derive(Default)]
+struct PassthroughStatsSnapshot {
+ forwarded_packets: u64,
+ failed_packets: u64,
+ dropped_packets: u64,
+ last_warning: Option<String>,
+}
+
+struct PassthroughWorker {
+ sender: SyncSender<Vec<u8>>,
+ handle: JoinHandle<()>,
+ forwarded_packets: Arc<AtomicU64>,
+ failed_packets: Arc<AtomicU64>,
+ dropped_packets: Arc<AtomicU64>,
+ last_warning: Arc<Mutex<Option<String>>>,
+}
+
+impl PassthroughWorker {
+ fn spawn(targets: Vec<SocketAddr>) -> Option<Self> {
+  let (sender, receiver) = sync_channel::<Vec<u8>>(PASSTHROUGH_QUEUE_CAPACITY);
+  let forwarded_packets = Arc::new(AtomicU64::new(0));
+  let failed_packets = Arc::new(AtomicU64::new(0));
+  let dropped_packets = Arc::new(AtomicU64::new(0));
+  let last_warning = Arc::new(Mutex::new(None));
+
+  let thread_forwarded = Arc::clone(&forwarded_packets);
+  let thread_failed = Arc::clone(&failed_packets);
+  let thread_warning = Arc::clone(&last_warning);
+
+  let handle = thread::Builder::new()
+   .name("unvet-vmc-osc-passthrough".to_owned())
+   .spawn(move || {
+    let socket = match UdpSocket::bind("0.0.0.0:0") {
+     Ok(socket) => socket,
+     Err(error) => {
+      if let Ok(mut guard) = thread_warning.lock() {
+       *guard = Some(format!("passthrough worker bind failed: {error}"));
+      }
+      return;
+     },
+    };
+
+    while let Ok(payload) = receiver.recv() {
+     for target in &targets {
+      match socket.send_to(&payload, target) {
+       Ok(sent) if sent == payload.len() => {
+        thread_forwarded.fetch_add(1, Ordering::Relaxed);
+       },
+       Ok(sent) => {
+        thread_failed.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut guard) = thread_warning.lock() {
+         *guard = Some(format!("short passthrough send to {target}: sent {sent} / {} bytes", payload.len()));
+        }
+       },
+       Err(error) => {
+        thread_failed.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut guard) = thread_warning.lock() {
+         *guard = Some(format!("passthrough send to {target} failed: {error}"));
+        }
+       },
+      }
+     }
+    }
+   })
+   .ok()?;
+
+  Some(Self {
+   sender,
+   handle,
+   forwarded_packets,
+   failed_packets,
+   dropped_packets,
+   last_warning,
+  })
+ }
+
+ fn dispatcher(&self) -> PassthroughDispatch {
+  PassthroughDispatch {
+   sender: self.sender.clone(),
+   dropped_packets: Arc::clone(&self.dropped_packets),
+   last_warning: Arc::clone(&self.last_warning),
+  }
+ }
+
+ fn snapshot(&self) -> PassthroughStatsSnapshot {
+  let mut result = PassthroughStatsSnapshot::default();
+  result.forwarded_packets = self.forwarded_packets.load(Ordering::Relaxed);
+  result.failed_packets = self.failed_packets.load(Ordering::Relaxed);
+  result.dropped_packets = self.dropped_packets.load(Ordering::Relaxed);
+  if let Ok(guard) = self.last_warning.lock() {
+   result.last_warning = guard.clone();
+  }
+  result
+ }
+
+ fn stop(self) {
+  drop(self.sender);
+  let _ = self.handle.join();
+ }
 }
 
 impl VmcOscReceiver {
@@ -64,7 +245,12 @@ impl VmcOscReceiver {
    active: false,
    buffered_frame: None,
    socket: None,
-   receive_buffer: [0; RECEIVE_BUFFER_BYTES],
+   passthrough_targets: Vec::new(),
+   passthrough_worker: None,
+   reader_stop: Arc::new(AtomicBool::new(false)),
+   reader_handle: None,
+   reader_shared: Arc::new(Mutex::new(ReaderRuntimeShared::default())),
+   latest_frame_shared: Arc::new(Mutex::new(None)),
    stats: ReceiverStats::default(),
   }
  }
@@ -82,8 +268,12 @@ impl VmcOscReceiver {
  }
 
  pub fn connect(&mut self) -> AppResult<()> {
-  // Ensure stale sockets are released before rebinding during reconnect.
+  // Ensure stale sockets and worker threads are released before rebinding during reconnect.
+  self.stop_reader_thread();
   self.socket = None;
+  if let Some(worker) = self.passthrough_worker.take() {
+   worker.stop();
+  }
   self.state = ConnectionState::Connecting;
 
   let bind_address = format!("0.0.0.0:{}", self.options.udp_port);
@@ -92,8 +282,41 @@ impl VmcOscReceiver {
    AppError::from(error)
   })?;
 
-  socket.set_nonblocking(true)?;
-  socket.set_read_timeout(Some(Duration::from_millis(1)))?;
+  socket.set_nonblocking(false)?;
+  socket.set_read_timeout(Some(Duration::from_millis(SOCKET_READ_TIMEOUT_MS)))?;
+
+  let (passthrough_targets, passthrough_warnings) = compile_passthrough_targets(&self.options);
+  self.passthrough_targets = passthrough_targets;
+  self.stats.passthrough_targets_active = self.passthrough_targets.len();
+  self.stats.passthrough_packets_forwarded = 0;
+  self.stats.passthrough_packets_failed = 0;
+  self.stats.passthrough_packets_dropped = 0;
+  self.stats.passthrough_last_warning = if passthrough_warnings.is_empty() {
+   None
+  } else {
+   Some(passthrough_warnings.join("; "))
+  };
+
+  self.passthrough_worker = if self.options.passthrough.enabled && !self.passthrough_targets.is_empty() {
+   let worker = PassthroughWorker::spawn(self.passthrough_targets.clone());
+   if worker.is_none() {
+    self.stats.passthrough_last_warning = Some("failed to spawn passthrough worker thread".to_owned());
+   }
+   worker
+  } else {
+   None
+  };
+
+  if let Ok(mut guard) = self.reader_shared.lock() {
+   *guard = ReaderRuntimeShared::default();
+  }
+  if let Ok(mut guard) = self.latest_frame_shared.lock() {
+   *guard = None;
+  }
+
+  let reader_socket = socket.try_clone()?;
+  let passthrough_dispatch = self.passthrough_worker.as_ref().map(PassthroughWorker::dispatcher);
+  self.spawn_reader_thread(reader_socket, passthrough_dispatch)?;
 
   self.socket = Some(socket);
   self.state = ConnectionState::Receiving;
@@ -106,11 +329,26 @@ impl VmcOscReceiver {
   self.state = ConnectionState::Disconnected;
   self.active = false;
   self.buffered_frame = None;
+  self.stop_reader_thread();
   self.socket = None;
+  if let Some(worker) = self.passthrough_worker.take() {
+   worker.stop();
+  }
+  if let Ok(mut guard) = self.reader_shared.lock() {
+   *guard = ReaderRuntimeShared::default();
+  }
+  if let Ok(mut guard) = self.latest_frame_shared.lock() {
+   *guard = None;
+  }
+  self.passthrough_targets.clear();
+  self.stats.passthrough_targets_active = 0;
  }
 
  pub fn clear_error(&mut self) {
   self.stats.last_error = None;
+  if let Ok(mut guard) = self.reader_shared.lock() {
+   guard.last_error = None;
+  }
   if self.socket.is_some() {
    self.state = ConnectionState::Receiving;
    self.active = true;
@@ -125,58 +363,136 @@ impl VmcOscReceiver {
  }
 
  fn try_read_frames(&mut self) {
-  let mut latest = None;
-  let Some(socket) = self.socket.as_ref().and_then(|socket| socket.try_clone().ok()) else {
+  let Some(_socket) = self.socket.as_ref() else {
    return;
   };
 
-  loop {
-   match socket.recv_from(&mut self.receive_buffer) {
-    Ok((size, _source)) => {
-     self.stats.udp_packets_received += 1;
-     self.stats.last_packet_timestamp_ms = Some(now_millis());
+  if let Ok(guard) = self.reader_shared.lock() {
+   self.stats.udp_packets_received = guard.udp_packets_received;
+   self.stats.osc_packets_decoded = guard.osc_packets_decoded;
+   self.stats.frames_emitted = guard.frames_emitted;
+   self.stats.frames_ignored = guard.frames_ignored;
+   self.stats.last_packet_timestamp_ms = guard.last_packet_timestamp_ms;
+   self.stats.last_error = guard.last_error.clone();
+  }
 
-     let packet = match decode_osc_packet(&self.receive_buffer[..size]) {
-      Ok(packet) => packet,
-      Err(error) => {
-       self.stats.frames_ignored += 1;
-       // Keep the link active on malformed OSC payloads and wait for the next packet.
-       self.stats.last_error = Some(error);
-       continue;
-      },
-     };
-
-     self.stats.osc_packets_decoded += 1;
-     if let Some(frame) = parse_tracking_frame_from_packet(&packet, now_millis()) {
-      self.stats.frames_emitted += 1;
-      latest = Some(frame);
-     } else {
-      self.stats.frames_ignored += 1;
-     }
-    },
-    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-     break;
-    },
-    Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-     break;
-    },
-    Err(error) => {
-     self.stats.frames_ignored += 1;
-     self.record_error(format!("VMC/OSC UDP receive failed: {error}"));
-     break;
-    },
+  if let Ok(mut guard) = self.latest_frame_shared.lock() {
+   if let Some(frame) = guard.take() {
+    self.buffered_frame = Some(frame);
+    self.state = ConnectionState::Receiving;
+    self.active = true;
+    self.stats.last_error = None;
    }
   }
 
-  if latest.is_some() {
-   self.state = ConnectionState::Receiving;
-   self.active = true;
-   self.stats.last_error = None;
-   self.buffered_frame = latest;
+  self.refresh_passthrough_stats_from_worker();
+ }
+
+ fn spawn_reader_thread(&mut self, socket: UdpSocket, passthrough_dispatch: Option<PassthroughDispatch>) -> AppResult<()> {
+  self.reader_stop.store(false, Ordering::Relaxed);
+
+  let stop_flag = Arc::clone(&self.reader_stop);
+  let shared = Arc::clone(&self.reader_shared);
+  let latest_frame_shared = Arc::clone(&self.latest_frame_shared);
+
+  let handle = thread::Builder::new()
+   .name("unvet-vmc-osc-reader".to_owned())
+   .spawn(move || {
+    let mut receive_buffer = [0; RECEIVE_BUFFER_BYTES];
+
+    while !stop_flag.load(Ordering::Relaxed) {
+     match socket.recv_from(&mut receive_buffer) {
+      Ok((size, _source)) => {
+       let timestamp_ms = now_millis();
+       let payload = &receive_buffer[..size];
+
+       if let Some(dispatch) = &passthrough_dispatch {
+        let _ = dispatch.forward_payload(payload);
+       }
+
+       let mut emitted_frame = None;
+       let mut decode_failed = None;
+       let mut parsed_packet = false;
+
+       match decode_osc_packet(payload) {
+        Ok(packet) => {
+         parsed_packet = true;
+         emitted_frame = parse_tracking_frame_from_packet(&packet, timestamp_ms);
+        },
+        Err(error) => {
+         decode_failed = Some(error);
+        },
+       }
+
+       if let Ok(mut guard) = shared.lock() {
+        guard.udp_packets_received = guard.udp_packets_received.saturating_add(1);
+        guard.last_packet_timestamp_ms = Some(timestamp_ms);
+
+        if parsed_packet {
+         guard.osc_packets_decoded = guard.osc_packets_decoded.saturating_add(1);
+         if emitted_frame.is_some() {
+          guard.frames_emitted = guard.frames_emitted.saturating_add(1);
+          guard.last_error = None;
+         } else {
+          guard.frames_ignored = guard.frames_ignored.saturating_add(1);
+         }
+        } else {
+         guard.frames_ignored = guard.frames_ignored.saturating_add(1);
+         guard.last_error = decode_failed;
+        }
+       }
+
+       if let Some(frame) = emitted_frame {
+        if let Ok(mut guard) = latest_frame_shared.lock() {
+         *guard = Some(frame);
+        }
+       }
+      },
+      Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+       continue;
+      },
+      Err(error) => {
+       if let Ok(mut guard) = shared.lock() {
+        guard.frames_ignored = guard.frames_ignored.saturating_add(1);
+        guard.last_error = Some(format!("VMC/OSC UDP receive failed: {error}"));
+       }
+      },
+     }
+    }
+   })
+   .map_err(AppError::from)?;
+
+  self.reader_handle = Some(handle);
+  Ok(())
+ }
+
+ fn stop_reader_thread(&mut self) {
+  self.reader_stop.store(true, Ordering::Relaxed);
+  if let Some(handle) = self.reader_handle.take() {
+   let _ = handle.join();
+  }
+  self.reader_stop.store(false, Ordering::Relaxed);
+ }
+
+ fn refresh_passthrough_stats_from_worker(&mut self) {
+  let Some(worker) = &self.passthrough_worker else {
+   return;
+  };
+
+  let snapshot = worker.snapshot();
+  self.stats.passthrough_packets_forwarded = snapshot.forwarded_packets;
+  self.stats.passthrough_packets_failed = snapshot.failed_packets;
+  self.stats.passthrough_packets_dropped = snapshot.dropped_packets;
+  if let Some(warning) = snapshot.last_warning {
+   self.stats.passthrough_last_warning = Some(warning);
   }
  }
 
  fn record_error(&mut self, message: String) {
+  self.stop_reader_thread();
+  if let Some(worker) = self.passthrough_worker.take() {
+   worker.stop();
+  }
   self.state = ConnectionState::Error;
   self.active = false;
   self.socket = None;
@@ -440,11 +756,113 @@ fn now_millis() -> u64 {
  SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
+fn compile_passthrough_targets(options: &ReceiverOptions) -> (Vec<SocketAddr>, Vec<String>) {
+ if !options.passthrough.enabled {
+  return (Vec::new(), Vec::new());
+ }
+
+ let mut unique = HashSet::new();
+ let mut targets = Vec::new();
+ let mut warnings = Vec::new();
+
+ for raw in &options.passthrough.targets {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+   continue;
+  }
+
+  let Some((host, port)) = parse_target_host_port(trimmed) else {
+   warnings.push(format!("ignored invalid passthrough target `{trimmed}`"));
+   continue;
+  };
+
+  if is_self_loop_target(&host, port, options.udp_port) {
+   warnings.push(format!("ignored self-loop passthrough target `{trimmed}`"));
+   continue;
+  }
+
+  let target = format_target_for_send(&host, port);
+  let Some(target_address) = resolve_target_address(&target) else {
+   warnings.push(format!("ignored unresolved passthrough target `{trimmed}`"));
+   continue;
+  };
+
+  if !unique.insert(target_address) {
+   continue;
+  }
+
+  targets.push(target_address);
+ }
+
+ (targets, warnings)
+}
+
+fn resolve_target_address(target: &str) -> Option<SocketAddr> {
+ target.to_socket_addrs().ok()?.next()
+}
+
+fn parse_target_host_port(raw: &str) -> Option<(String, u16)> {
+ let text = raw.trim();
+ if text.is_empty() {
+  return None;
+ }
+
+ if let Some(rest) = text.strip_prefix('[') {
+  let end = rest.find(']')?;
+  let host = rest[..end].trim().to_ascii_lowercase();
+  if host.is_empty() {
+   return None;
+  }
+
+  let port_text = rest[end + 1..].strip_prefix(':')?.trim();
+  if port_text.is_empty() || port_text.contains(':') {
+   return None;
+  }
+
+  let port = port_text.parse::<u16>().ok()?;
+  if port == 0 {
+   return None;
+  }
+
+  return Some((host, port));
+ }
+
+ let mut parts = text.rsplitn(2, ':');
+ let port_text = parts.next()?.trim();
+ let host = parts.next()?.trim().to_ascii_lowercase();
+ if host.is_empty() || host.contains(':') {
+  return None;
+ }
+
+ let port = port_text.parse::<u16>().ok()?;
+ if port == 0 {
+  return None;
+ }
+
+ Some((host, port))
+}
+
+fn format_target_for_send(host: &str, port: u16) -> String {
+ if host.contains(':') {
+  format!("[{host}]:{port}")
+ } else {
+  format!("{host}:{port}")
+ }
+}
+
+fn is_self_loop_target(host: &str, port: u16, listen_port: u16) -> bool {
+ if port != listen_port {
+  return false;
+ }
+
+ matches!(host, "127.0.0.1" | "localhost" | "::1" | "0.0.0.0" | "::")
+}
+
 #[cfg(test)]
 mod tests {
  use std::{net::UdpSocket, thread, time::Duration};
 
- use super::{ConnectionState, ReceiverOptions, VmcOscReceiver, parse_tracking_frame_from_packet, quaternion_to_rotation_deg};
+ use super::{parse_tracking_frame_from_packet, quaternion_to_rotation_deg, ConnectionState, ReceiverOptions, VmcOscReceiver};
  use glam::{EulerRot, Quat};
  use rosc::{OscMessage, OscPacket, OscType};
  use unvet_core::ports::InputReceiver;
@@ -535,7 +953,10 @@ mod tests {
  #[test]
  fn receiver_stays_connected_after_malformed_packet_and_parses_next_valid_packet() {
   let port = acquire_free_port();
-  let mut receiver = VmcOscReceiver::new(ReceiverOptions { udp_port: port });
+  let mut receiver = VmcOscReceiver::new(ReceiverOptions {
+   udp_port: port,
+   ..ReceiverOptions::default()
+  });
   receiver.connect().expect("connect VMC receiver");
 
   let sender = UdpSocket::bind("127.0.0.1:0").expect("bind sender UDP socket");
@@ -566,7 +987,10 @@ mod tests {
  #[test]
  fn receiver_parses_large_bundle_payload_from_socket() {
   let port = acquire_free_port();
-  let mut receiver = VmcOscReceiver::new(ReceiverOptions { udp_port: port });
+  let mut receiver = VmcOscReceiver::new(ReceiverOptions {
+   udp_port: port,
+   ..ReceiverOptions::default()
+  });
   receiver.connect().expect("connect VMC receiver");
 
   let mut content = vec![bone_packet("Head", 7.0, -3.0, 1.0)];
@@ -608,5 +1032,83 @@ mod tests {
   assert!((frame.head_yaw_deg - 7.0).abs() < 0.1);
   assert!((frame.head_pitch_deg + 3.0).abs() < 0.1);
   assert!(receiver.stats().udp_packets_received >= 1);
+ }
+
+ #[test]
+ fn receiver_forwards_raw_udp_to_multiple_targets() {
+  let listen_port = acquire_free_port();
+  let target1_port = acquire_free_port();
+  let target2_port = acquire_free_port();
+
+  let mut receiver = VmcOscReceiver::new(ReceiverOptions {
+   udp_port: listen_port,
+   passthrough: super::PassthroughOptions {
+    enabled: true,
+    targets: vec![format!("127.0.0.1:{target1_port}"), format!("127.0.0.1:{target2_port}")],
+    mode: super::PassthroughMode::RawUdpForward,
+   },
+  });
+  receiver.connect().expect("connect VMC receiver");
+
+  let receiver_target = format!("127.0.0.1:{listen_port}");
+  let sender = UdpSocket::bind("127.0.0.1:0").expect("bind sender UDP socket");
+
+  let listener1 = UdpSocket::bind(format!("127.0.0.1:{target1_port}")).expect("bind passthrough listener1");
+  let listener2 = UdpSocket::bind(format!("127.0.0.1:{target2_port}")).expect("bind passthrough listener2");
+  listener1
+   .set_read_timeout(Some(Duration::from_millis(800)))
+   .expect("set listener1 timeout");
+  listener2
+   .set_read_timeout(Some(Duration::from_millis(800)))
+   .expect("set listener2 timeout");
+
+  let valid_packet = bone_packet("Head", 3.0, -1.0, 0.0);
+  let payload = rosc::encoder::encode(&valid_packet).expect("encode OSC payload");
+  sender.send_to(&payload, receiver_target).expect("send packet to receiver");
+
+  for _ in 0..40 {
+   let _ = receiver.poll_frame();
+   if receiver.stats().passthrough_packets_forwarded >= 2 {
+    break;
+   }
+   thread::sleep(Duration::from_millis(5));
+  }
+
+  let mut received1 = vec![0; 8192];
+  let mut received2 = vec![0; 8192];
+  let (size1, _) = listener1
+   .recv_from(&mut received1)
+   .expect("listener1 should receive forwarded datagram");
+  let (size2, _) = listener2
+   .recv_from(&mut received2)
+   .expect("listener2 should receive forwarded datagram");
+
+  assert_eq!(&received1[..size1], payload.as_slice());
+  assert_eq!(&received2[..size2], payload.as_slice());
+  assert_eq!(receiver.stats().passthrough_targets_active, 2);
+  assert!(receiver.stats().passthrough_packets_forwarded >= 2);
+ }
+
+ #[test]
+ fn receiver_filters_self_loop_passthrough_target() {
+  let listen_port = acquire_free_port();
+  let target_port = acquire_free_port();
+
+  let mut receiver = VmcOscReceiver::new(ReceiverOptions {
+   udp_port: listen_port,
+   passthrough: super::PassthroughOptions {
+    enabled: true,
+    targets: vec![format!("127.0.0.1:{listen_port}"), format!("127.0.0.1:{target_port}")],
+    mode: super::PassthroughMode::RawUdpForward,
+   },
+  });
+  receiver.connect().expect("connect VMC receiver");
+
+  assert_eq!(receiver.stats().passthrough_targets_active, 1);
+  assert!(receiver
+   .stats()
+   .passthrough_last_warning
+   .as_ref()
+   .is_some_and(|message| message.contains("self-loop")));
  }
 }

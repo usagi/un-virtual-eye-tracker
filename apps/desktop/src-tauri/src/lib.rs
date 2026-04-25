@@ -1,4 +1,5 @@
 use std::{
+ collections::HashSet,
  path::PathBuf,
  sync::{Arc, Mutex},
  thread,
@@ -12,7 +13,7 @@ use serde::Serialize;
 use tauri::State;
 use unvet_config::{
  AppConfig, InputConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind, OutputSendFilterConfig,
- OutputSendFilterMode,
+ OutputSendFilterMode, VmcOscPassthroughConfig, VmcOscPassthroughMode,
 };
 use unvet_core::{
  calibration::NeutralPoseCalibration,
@@ -23,7 +24,10 @@ use unvet_core::{
  AppResult,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
-use unvet_input_vmc_osc::{ReceiverOptions as VmcOscReceiverOptions, VmcOscReceiver};
+use unvet_input_vmc_osc::{
+ PassthroughMode as VmcReceiverPassthroughMode, PassthroughOptions as VmcReceiverPassthroughOptions,
+ ReceiverOptions as VmcOscReceiverOptions, VmcOscReceiver,
+};
 use unvet_output::{list_running_process_names, OutputBackendLayer, SendFilterStatus};
 
 #[cfg(target_os = "windows")]
@@ -49,7 +53,7 @@ enum RuntimeInputReceiver {
 }
 
 impl RuntimeInputReceiver {
- fn from_input_config(config: &InputConfig, source: InputSource) -> Self {
+ fn from_input_config(config: &InputConfig, passthrough: &VmcOscPassthroughConfig, source: InputSource) -> Self {
   match source {
    InputSource::IfacialmocapUdp | InputSource::IfacialmocapTcp => {
     let mut options = ReceiverOptions::default();
@@ -62,6 +66,7 @@ impl RuntimeInputReceiver {
    InputSource::VmcOsc => {
     let mut options = VmcOscReceiverOptions::default();
     options.udp_port = config.vmc_osc_port;
+    options.passthrough = to_vmc_receiver_passthrough_options(passthrough);
     Self::VmcOsc(VmcOscReceiver::new(options))
    },
   }
@@ -146,6 +151,16 @@ impl RuntimeInputReceiver {
  }
 }
 
+fn to_vmc_receiver_passthrough_options(config: &VmcOscPassthroughConfig) -> VmcReceiverPassthroughOptions {
+ VmcReceiverPassthroughOptions {
+  enabled: config.enabled,
+  targets: config.targets.clone(),
+  mode: match config.mode {
+   VmcOscPassthroughMode::RawUdpForward => VmcReceiverPassthroughMode::RawUdpForward,
+  },
+ }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeSnapshot {
@@ -157,6 +172,9 @@ struct RuntimeSnapshot {
  paused: bool,
  input_source: InputSource,
  vmc_osc_port: u16,
+ vmc_osc_passthrough_enabled: bool,
+ vmc_osc_passthrough_mode: VmcOscPassthroughMode,
+ vmc_osc_passthrough_targets: Vec<String>,
  output_backend: OutputBackendKind,
  output_send_filter_mode: OutputSendFilterMode,
  output_send_filter_process_names: Vec<String>,
@@ -188,6 +206,17 @@ impl RuntimeSnapshot {
    paused: false,
    input_source: if restore { config.input.source } else { InputSource::default() },
    vmc_osc_port: config.input.vmc_osc_port,
+   vmc_osc_passthrough_enabled: if restore {
+    config.vmc_osc_passthrough.enabled
+   } else {
+    VmcOscPassthroughConfig::default().enabled
+   },
+   vmc_osc_passthrough_mode: config.vmc_osc_passthrough.mode,
+   vmc_osc_passthrough_targets: if restore {
+    config.vmc_osc_passthrough.targets.clone()
+   } else {
+    VmcOscPassthroughConfig::default().targets
+   },
    output_backend: if restore {
     config.output.backend
    } else {
@@ -248,6 +277,9 @@ struct RuntimeShared {
  config_path: PathBuf,
  desired_input_source: InputSource,
  desired_vmc_osc_port: u16,
+ desired_vmc_osc_passthrough_enabled: bool,
+ desired_vmc_osc_passthrough_mode: VmcOscPassthroughMode,
+ desired_vmc_osc_passthrough_targets: Vec<String>,
  desired_output_backend: OutputBackendKind,
  desired_output_send_filter: OutputSendFilterConfig,
  desired_output_enabled: bool,
@@ -277,6 +309,9 @@ impl RuntimeState {
     config_path,
     desired_input_source: snapshot.input_source,
     desired_vmc_osc_port: snapshot.vmc_osc_port,
+    desired_vmc_osc_passthrough_enabled: snapshot.vmc_osc_passthrough_enabled,
+    desired_vmc_osc_passthrough_mode: snapshot.vmc_osc_passthrough_mode,
+    desired_vmc_osc_passthrough_targets: snapshot.vmc_osc_passthrough_targets.clone(),
     desired_output_backend: snapshot.output_backend,
     desired_output_send_filter: OutputSendFilterConfig {
      mode: snapshot.output_send_filter_mode,
@@ -303,6 +338,9 @@ impl RuntimeState {
 struct RuntimeDesired {
  input_source: InputSource,
  vmc_osc_port: u16,
+ vmc_osc_passthrough_enabled: bool,
+ vmc_osc_passthrough_mode: VmcOscPassthroughMode,
+ vmc_osc_passthrough_targets: Vec<String>,
  output_backend: OutputBackendKind,
  output_send_filter: OutputSendFilterConfig,
  output_enabled: bool,
@@ -456,6 +494,39 @@ fn set_vmc_osc_port(port: u16, state: State<RuntimeState>) -> Result<(), String>
 }
 
 #[tauri::command]
+fn set_vmc_osc_passthrough_enabled(enabled: bool, state: State<RuntimeState>) {
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_vmc_osc_passthrough_enabled = enabled;
+ guard.snapshot.vmc_osc_passthrough_enabled = enabled;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+}
+
+#[tauri::command]
+fn set_vmc_osc_passthrough_mode(mode: VmcOscPassthroughMode, state: State<RuntimeState>) {
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_vmc_osc_passthrough_mode = mode;
+ guard.snapshot.vmc_osc_passthrough_mode = mode;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+}
+
+#[tauri::command]
+fn set_vmc_osc_passthrough_targets(targets: Vec<String>, state: State<RuntimeState>) -> Result<(), String> {
+ let normalized_targets = sanitize_passthrough_targets(targets)?;
+
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_vmc_osc_passthrough_targets = normalized_targets.clone();
+ guard.snapshot.vmc_osc_passthrough_targets = normalized_targets;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+ Ok(())
+}
+
+#[tauri::command]
 fn set_output_backend(backend: OutputBackendKind, state: State<RuntimeState>) {
  let mut guard = state.shared.lock().expect("runtime state lock");
  guard.desired_output_backend = backend;
@@ -531,6 +602,9 @@ pub fn run() {
    set_paused,
    set_input_source,
    set_vmc_osc_port,
+   set_vmc_osc_passthrough_enabled,
+   set_vmc_osc_passthrough_mode,
+   set_vmc_osc_passthrough_targets,
    set_output_backend,
    set_output_send_filter,
    list_running_processes,
@@ -686,7 +760,8 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   let mut calibration = build_calibration(&config);
 
   let mut active_input_config = config.input.clone();
-  let mut receiver = RuntimeInputReceiver::from_input_config(&active_input_config, active_input_config.source);
+  let mut active_input_passthrough = config.vmc_osc_passthrough.clone();
+  let mut receiver = RuntimeInputReceiver::from_input_config(&active_input_config, &active_input_passthrough, active_input_config.source);
   let mut output_layer = OutputBackendLayer::new(&config.output);
   let mut active_input_source = active_input_config.source;
   let mut active_backend = config.output.backend;
@@ -741,6 +816,27 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     }
    }
 
+   if desired.vmc_osc_passthrough_enabled != active_input_passthrough.enabled {
+    active_input_passthrough.enabled = desired.vmc_osc_passthrough_enabled;
+    if matches!(active_input_source, InputSource::VmcOsc) {
+     input_needs_reconnect = true;
+    }
+   }
+
+   if desired.vmc_osc_passthrough_mode != active_input_passthrough.mode {
+    active_input_passthrough.mode = desired.vmc_osc_passthrough_mode;
+    if matches!(active_input_source, InputSource::VmcOsc) {
+     input_needs_reconnect = true;
+    }
+   }
+
+   if desired.vmc_osc_passthrough_targets != active_input_passthrough.targets {
+    active_input_passthrough.targets = desired.vmc_osc_passthrough_targets.clone();
+    if matches!(active_input_source, InputSource::VmcOsc) {
+     input_needs_reconnect = true;
+    }
+   }
+
    if desired.input_source != active_input_source {
     active_input_config.source = desired.input_source;
     active_input_source = desired.input_source;
@@ -749,7 +845,7 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
 
    if input_needs_reconnect {
     receiver.disconnect();
-    receiver = RuntimeInputReceiver::from_input_config(&active_input_config, active_input_source);
+    receiver = RuntimeInputReceiver::from_input_config(&active_input_config, &active_input_passthrough, active_input_source);
     if let Err(error) = receiver.connect() {
      set_snapshot_error(&shared, format!("input reconnect failed: {error}"));
     } else {
@@ -778,7 +874,8 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     }
    }
 
-   if let Err(error) = output_layer.set_enabled(desired.output_enabled && !desired.paused && desired.output_clutch_engaged) {
+   let output_live = desired.output_enabled && !desired.paused && desired.output_clutch_engaged;
+   if let Err(error) = output_layer.set_enabled(output_live) {
     set_snapshot_error(&shared, format!("output enable failed: {error}"));
    }
 
@@ -796,7 +893,9 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    if desired.paused {
     let input_live = receiver.is_active() && last_frame_at.elapsed() < INPUT_LIVE_TIMEOUT;
     if !forced_idle_output {
-     let _ = output_layer.apply(OutputFrame::default());
+     if output_live {
+      let _ = output_layer.apply(OutputFrame::default());
+     }
      forced_idle_output = true;
     }
     refresh_snapshot_metadata(
@@ -826,10 +925,12 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
      output_frame
     };
 
-    if let Err(error) = output_layer.apply(smoothed_output) {
-     set_snapshot_error(&shared, format!("output apply failed: {error}"));
-    } else {
-     clear_snapshot_error(&shared);
+    if output_live {
+     if let Err(error) = output_layer.apply(smoothed_output) {
+      set_snapshot_error(&shared, format!("output apply failed: {error}"));
+     } else {
+      clear_snapshot_error(&shared);
+     }
     }
 
     last_frame_at = Instant::now();
@@ -857,7 +958,9 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     let idle_expired = last_frame_at.elapsed() >= IDLE_TIMEOUT;
     let keep_idle_streaming = matches!(active_backend, OutputBackendKind::Ets2);
     if idle_expired && (!forced_idle_output || keep_idle_streaming) {
-     let _ = output_layer.apply(OutputFrame::default());
+     if output_live {
+      let _ = output_layer.apply(OutputFrame::default());
+     }
      forced_idle_output = !keep_idle_streaming;
      refresh_snapshot_from_frame(
       &shared,
@@ -897,6 +1000,9 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
  RuntimeDesired {
   input_source: guard.desired_input_source,
   vmc_osc_port: guard.desired_vmc_osc_port,
+  vmc_osc_passthrough_enabled: guard.desired_vmc_osc_passthrough_enabled,
+  vmc_osc_passthrough_mode: guard.desired_vmc_osc_passthrough_mode,
+  vmc_osc_passthrough_targets: guard.desired_vmc_osc_passthrough_targets.clone(),
   output_backend: guard.desired_output_backend,
   output_send_filter: guard.desired_output_send_filter.clone(),
   output_enabled: guard.desired_output_enabled,
@@ -1016,6 +1122,9 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   persist_session_settings,
   input_source,
   vmc_osc_port,
+  vmc_osc_passthrough_enabled,
+  vmc_osc_passthrough_mode,
+  vmc_osc_passthrough_targets,
   output_backend,
   output_enabled,
   output_send_filter_mode,
@@ -1033,6 +1142,9 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.snapshot.persist_session_settings,
    guard.snapshot.input_source,
    guard.snapshot.vmc_osc_port,
+   guard.snapshot.vmc_osc_passthrough_enabled,
+   guard.snapshot.vmc_osc_passthrough_mode,
+   guard.snapshot.vmc_osc_passthrough_targets.clone(),
    guard.snapshot.output_backend,
    guard.snapshot.output_enabled,
    guard.snapshot.output_send_filter_mode,
@@ -1053,6 +1165,9 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
  let mut config = AppConfig::load_or_default(&config_path).map_err(|error| format!("failed to load config for persistence: {error}"))?;
  config.input.source = input_source;
  config.input.vmc_osc_port = vmc_osc_port;
+ config.vmc_osc_passthrough.enabled = vmc_osc_passthrough_enabled;
+ config.vmc_osc_passthrough.mode = vmc_osc_passthrough_mode;
+ config.vmc_osc_passthrough.targets = vmc_osc_passthrough_targets;
  config.output.backend = output_backend;
  config.output.enabled = output_enabled;
  config.output.send_filter = OutputSendFilterConfig {
@@ -1087,6 +1202,77 @@ fn now_millis() -> u64 {
   .duration_since(UNIX_EPOCH)
   .map(|duration| duration.as_millis() as u64)
   .unwrap_or(0)
+}
+
+fn sanitize_passthrough_targets(targets: Vec<String>) -> Result<Vec<String>, String> {
+ let mut normalized = Vec::new();
+ let mut seen = HashSet::new();
+
+ for raw in targets {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+   continue;
+  }
+
+  let (host, port) = parse_passthrough_target(trimmed)
+   .ok_or_else(|| format!("invalid passthrough target `{trimmed}` (expected host:port with port 1-65535)"))?;
+  let formatted = format_passthrough_target(&host, port);
+
+  if seen.insert(formatted.to_ascii_lowercase()) {
+   normalized.push(formatted);
+  }
+ }
+
+ Ok(normalized)
+}
+
+fn parse_passthrough_target(raw: &str) -> Option<(String, u16)> {
+ let text = raw.trim();
+ if text.is_empty() {
+  return None;
+ }
+
+ if let Some(rest) = text.strip_prefix('[') {
+  let end = rest.find(']')?;
+  let host = rest[..end].trim().to_ascii_lowercase();
+  if host.is_empty() {
+   return None;
+  }
+
+  let port_text = rest[end + 1..].strip_prefix(':')?.trim();
+  if port_text.is_empty() || port_text.contains(':') {
+   return None;
+  }
+
+  let port = port_text.parse::<u16>().ok()?;
+  if port == 0 {
+   return None;
+  }
+
+  return Some((host, port));
+ }
+
+ let mut parts = text.rsplitn(2, ':');
+ let port_text = parts.next()?.trim();
+ let host = parts.next()?.trim().to_ascii_lowercase();
+ if host.is_empty() || host.contains(':') {
+  return None;
+ }
+
+ let port = port_text.parse::<u16>().ok()?;
+ if port == 0 {
+  return None;
+ }
+
+ Some((host, port))
+}
+
+fn format_passthrough_target(host: &str, port: u16) -> String {
+ if host.contains(':') {
+  format!("[{host}]:{port}")
+ } else {
+  format!("{host}:{port}")
+ }
 }
 
 fn sanitize_process_names(process_names: Vec<String>) -> Vec<String> {

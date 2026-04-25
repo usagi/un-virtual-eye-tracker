@@ -5,7 +5,10 @@
   listRunningProcesses,
   requestRecalibration,
   setInputSource,
-    setVmcOscPort,
+  setVmcOscPort,
+  setVmcOscPassthroughEnabled,
+  setVmcOscPassthroughMode,
+  setVmcOscPassthroughTargets,
   setOutputBackend,
   setOutputAxisMultipliers,
   setOutputAxisInversion,
@@ -18,6 +21,7 @@
   type InputSource,
   type OutputBackendKind,
   type OutputSendFilterMode,
+  type VmcOscPassthroughMode,
   type RuntimeSnapshot,
  } from './lib/runtime'
 
@@ -39,6 +43,10 @@
   { value: 'foreground_process', label: '前面プロセス一致時のみ送信' },
  ]
 
+ const VMC_OSC_PASSTHROUGH_MODES: Array<{ value: VmcOscPassthroughMode; label: string }> = [
+  { value: 'raw_udp_forward', label: 'raw_udp_forward' },
+ ]
+
  const EMPTY_SNAPSHOT: RuntimeSnapshot = {
   inputConnected: false,
   outputEnabled: false,
@@ -48,6 +56,9 @@
   paused: false,
   inputSource: 'vmc_osc',
   vmcOscPort: 39539,
+  vmcOscPassthroughEnabled: false,
+  vmcOscPassthroughMode: 'raw_udp_forward',
+  vmcOscPassthroughTargets: [],
   outputBackend: 'ets2',
   outputSendFilterMode: 'unrestricted',
   outputSendFilterProcessNames: [],
@@ -117,6 +128,11 @@ const AXIS_MULTIPLIER_MAX = 9.0
 
  let vmcOscPortDraft = 39539
  let vmcOscPortDirty = false
+
+ let vmcOscPassthroughEnabledDraft = false
+ let vmcOscPassthroughModeDraft: VmcOscPassthroughMode = 'raw_udp_forward'
+ let vmcOscPassthroughTargetsDraft = ''
+ let vmcOscPassthroughTargetsDirty = false
 
  let yawMultiplierDraft = 1
  let pitchMultiplierDraft = 1
@@ -252,6 +268,96 @@ const AXIS_MULTIPLIER_MAX = 9.0
   return Math.min(VMC_OSC_PORT_MAX, Math.max(VMC_OSC_PORT_MIN, rounded))
  }
 
+ function parsePassthroughTarget(raw: string): string | null {
+  const text = raw.trim()
+  if (text.length === 0) {
+   return null
+  }
+
+  if (text.startsWith('[')) {
+   const end = text.indexOf(']')
+   if (end <= 1) {
+    return null
+   }
+
+   const host = text.slice(1, end).trim().toLowerCase()
+   const remainder = text.slice(end + 1).trim()
+   if (host.length === 0 || !remainder.startsWith(':')) {
+    return null
+   }
+
+   const port = Number(remainder.slice(1).trim())
+   if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return null
+   }
+
+   return `[${host}]:${port}`
+  }
+
+  const parts = text.split(':')
+  if (parts.length !== 2) {
+   return null
+  }
+
+  const host = parts[0].trim().toLowerCase()
+  const port = Number(parts[1].trim())
+  if (host.length === 0 || host.includes(':')) {
+   return null
+  }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+   return null
+  }
+
+  return `${host}:${port}`
+ }
+
+ function parsePassthroughTargetsInput(raw: string): { targets: string[]; invalidLine: string | null } {
+  const unique = new Set<string>()
+  const targets: string[] = []
+
+  for (const line of raw.split(/\r?\n/)) {
+   const trimmed = line.trim()
+   if (trimmed.length === 0) {
+    continue
+   }
+
+   const normalized = parsePassthroughTarget(trimmed)
+   if (!normalized) {
+    return {
+     targets,
+     invalidLine: trimmed,
+    }
+   }
+
+   const dedupKey = normalized.toLowerCase()
+   if (unique.has(dedupKey)) {
+    continue
+   }
+
+   unique.add(dedupKey)
+   targets.push(normalized)
+  }
+
+  return {
+   targets,
+   invalidLine: null,
+  }
+ }
+
+ function sameStringList(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+   return false
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+   if (left[index] !== right[index]) {
+    return false
+   }
+  }
+
+  return true
+ }
+
  function clampOutputEasingAlpha(value: number): number {
   return Math.min(OUTPUT_EASING_ALPHA_MAX, Math.max(OUTPUT_EASING_ALPHA_MIN, value))
  }
@@ -361,17 +467,23 @@ const AXIS_MULTIPLIER_MAX = 9.0
    vmcOscPortDraft = latest.vmcOscPort
   }
 
+  vmcOscPassthroughEnabledDraft = latest.vmcOscPassthroughEnabled
+  vmcOscPassthroughModeDraft = latest.vmcOscPassthroughMode
+  if (!vmcOscPassthroughTargetsDirty) {
+   vmcOscPassthroughTargetsDraft = latest.vmcOscPassthroughTargets.join('\n')
+  }
+
    if (Date.now() - axisLastEditAt > AXIS_SYNC_GRACE_MS) {
     yawMultiplierDraft = latest.yawOutputMultiplier
     pitchMultiplierDraft = latest.pitchOutputMultiplier
    }
 
-  if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
-   invertYawDraft = latest.invertOutputYaw
-   invertPitchDraft = latest.invertOutputPitch
-   outputEasingEnabledDraft = latest.outputEasingEnabled
-   outputEasingAlphaDraft = latest.outputEasingAlpha
-  }
+    if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
+     invertYawDraft = latest.invertOutputYaw
+     invertPitchDraft = latest.invertOutputPitch
+     outputEasingEnabledDraft = latest.outputEasingEnabled
+     outputEasingAlphaDraft = latest.outputEasingAlpha
+    }
 
    if (!previousSnapshot.inputConnected && latest.inputConnected) {
     pushLog('info', 'runtime', 'Input link connected')
@@ -393,6 +505,20 @@ const AXIS_MULTIPLIER_MAX = 9.0
       ? 'Send filter gate opened'
       : `Send filter gate closed${latest.outputSendFilterActiveProcess ? ` (active: ${latest.outputSendFilterActiveProcess})` : ''}`,
     )
+   }
+
+   if (previousSnapshot.vmcOscPassthroughEnabled !== latest.vmcOscPassthroughEnabled) {
+    pushLog(
+     latest.vmcOscPassthroughEnabled ? 'info' : 'warn',
+     'runtime',
+     latest.vmcOscPassthroughEnabled
+      ? 'VMC/OSC passthrough enabled'
+      : 'VMC/OSC passthrough disabled',
+    )
+   }
+
+   if (!sameStringList(previousSnapshot.vmcOscPassthroughTargets, latest.vmcOscPassthroughTargets)) {
+    pushLog('info', 'runtime', `VMC/OSC passthrough targets: ${latest.vmcOscPassthroughTargets.length}`)
    }
 
    const wasLiveSend = previousSnapshot.outputEnabled && previousSnapshot.outputClutchEngaged
@@ -584,6 +710,49 @@ const AXIS_MULTIPLIER_MAX = 9.0
    vmcOscPortDirty = vmcOscPortDraft !== snapshot.vmcOscPort
   })
  }
+
+   function onVmcOscPassthroughEnabledToggle(event: Event) {
+    const enabled = (event.currentTarget as HTMLInputElement).checked
+    vmcOscPassthroughEnabledDraft = enabled
+    void applyAction(`Set VMC/OSC passthrough enabled=${enabled}`, () =>
+     setVmcOscPassthroughEnabled(enabled),
+    )
+   }
+
+   function onVmcOscPassthroughModeChange(event: Event) {
+    const mode = (event.currentTarget as HTMLSelectElement).value as VmcOscPassthroughMode
+    vmcOscPassthroughModeDraft = mode
+    void applyAction(`Set VMC/OSC passthrough mode=${mode}`, () => setVmcOscPassthroughMode(mode))
+   }
+
+   function onVmcOscPassthroughTargetsInput(event: Event) {
+    vmcOscPassthroughTargetsDraft = (event.currentTarget as HTMLTextAreaElement).value
+    const parsed = parsePassthroughTargetsInput(vmcOscPassthroughTargetsDraft)
+    vmcOscPassthroughTargetsDirty =
+     parsed.invalidLine !== null || !sameStringList(parsed.targets, snapshot.vmcOscPassthroughTargets)
+   }
+
+   function onApplyVmcOscPassthroughTargets() {
+    const parsed = parsePassthroughTargetsInput(vmcOscPassthroughTargetsDraft)
+    if (parsed.invalidLine) {
+     pushLog('warn', 'ui', `Invalid passthrough target: ${parsed.invalidLine}`)
+     return
+    }
+
+    if (sameStringList(parsed.targets, snapshot.vmcOscPassthroughTargets)) {
+     vmcOscPassthroughTargetsDirty = false
+     return
+    }
+
+    void applyAction(`Set VMC/OSC passthrough targets=${parsed.targets.length}`, () =>
+     setVmcOscPassthroughTargets(parsed.targets),
+    ).finally(() => {
+     const latestParsed = parsePassthroughTargetsInput(vmcOscPassthroughTargetsDraft)
+     vmcOscPassthroughTargetsDirty =
+      latestParsed.invalidLine !== null ||
+      !sameStringList(latestParsed.targets, snapshot.vmcOscPassthroughTargets)
+    })
+   }
 
  function onOutputBackendChange(event: Event) {
   const backend = (event.currentTarget as HTMLSelectElement).value as OutputBackendKind
@@ -851,6 +1020,53 @@ const AXIS_MULTIPLIER_MAX = 9.0
       </div>
       <p class="hint">Current runtime port: {snapshot.vmcOscPort}</p>
      </div>
+
+      <div class="control compact">
+       <label class="switch">
+        <input
+         type="checkbox"
+         checked={vmcOscPassthroughEnabledDraft}
+         on:change={onVmcOscPassthroughEnabledToggle}
+        />
+        <span>VMC / OSC Passthrough</span>
+       </label>
+       <p class="hint">受信したVMC/OSC UDP datagramを複数ターゲットへそのまま転送</p>
+      </div>
+
+      <div class="control compact">
+       <label for="vmc-osc-passthrough-mode">VMC/OSC Passthrough Mode</label>
+       <select
+        id="vmc-osc-passthrough-mode"
+        value={vmcOscPassthroughModeDraft}
+        on:change={onVmcOscPassthroughModeChange}
+       >
+        {#each VMC_OSC_PASSTHROUGH_MODES as option}
+         <option value={option.value}>{option.label}</option>
+        {/each}
+       </select>
+      </div>
+
+      <div class="control compact">
+       <label for="vmc-osc-passthrough-targets">VMC/OSC Passthrough Targets (one host:port per line)</label>
+       <textarea
+        id="vmc-osc-passthrough-targets"
+        rows="3"
+        placeholder="127.0.0.1:39539&#10;127.0.0.1:39541"
+        value={vmcOscPassthroughTargetsDraft}
+        on:input={onVmcOscPassthroughTargetsInput}
+       ></textarea>
+       <div class="row-inline">
+        <p class="hint">Current targets: {snapshot.vmcOscPassthroughTargets.length}</p>
+        <button
+         type="button"
+         class="action"
+         disabled={!vmcOscPassthroughTargetsDirty}
+         on:click={onApplyVmcOscPassthroughTargets}
+        >
+         Apply
+        </button>
+       </div>
+      </div>
     {/if}
 
     <button class="recalibrate" disabled={busy} on:click={onRecalibrate}>Recalibrate Neutral Pose</button>
