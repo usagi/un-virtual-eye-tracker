@@ -298,8 +298,33 @@ textarea {
 
 .axis-grid {
  display: grid;
- grid-template-columns: repeat(2, minmax(0, 1fr));
+ grid-template-columns: 1fr 1fr;
+ grid-template-rows: auto auto auto;
+ grid-template-areas:
+  "pitch-pos pitch-pos"
+  "yaw-neg   yaw-pos"
+  "pitch-neg pitch-neg";
  gap: 8px;
+}
+
+.axis-card.pitch-pos {
+ grid-area: pitch-pos;
+ justify-self: center;
+ width: calc(50% - 4px);
+}
+
+.axis-card.yaw-neg {
+ grid-area: yaw-neg;
+}
+
+.axis-card.yaw-pos {
+ grid-area: yaw-pos;
+}
+
+.axis-card.pitch-neg {
+ grid-area: pitch-neg;
+ justify-self: center;
+ width: calc(50% - 4px);
 }
 
 .axis-advanced-grid {
@@ -602,8 +627,16 @@ textarea {
 
  .status-grid,
  .field-grid,
- .axis-grid,
  .axis-advanced-grid {
   grid-template-columns: 1fr;
+ }
+
+ .axis-grid {
+  grid-template-columns: 1fr 1fr;
+ }
+
+ .axis-card.pitch-pos,
+ .axis-card.pitch-neg {
+  width: calc(50% - 4px);
  }
 }
