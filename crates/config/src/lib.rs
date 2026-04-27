@@ -372,7 +372,6 @@ impl Default for InputFilterConfig {
  }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct AppConfig {
