@@ -1,6 +1,6 @@
 [package]
 name = "unvet-desktop"
-version = "1.1.0"
+version = "1.2.0"
 description = "UNVET desktop control UI"
 authors = ["UNVET Contributors"]
 license = "MIT"
