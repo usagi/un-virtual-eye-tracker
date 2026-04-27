@@ -1108,7 +1108,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
     <h2>Axis Tuning (Instant Apply)</h2>
 
     <div class="axis-grid">
-     <article class="axis-card pitch-pos">
+     <article class={`axis-card pitch-pos ${snapshot.lookPitchNormRaw >= 0 ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Pitch+ (Up)</span>
        <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
@@ -1138,7 +1138,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
       <p class="axis-caption">x{snapshot.pitchPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
      </article>
 
-     <article class="axis-card yaw-neg">
+     <article class={`axis-card yaw-neg ${snapshot.lookYawNormRaw < 0 ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Yaw- (Left)</span>
        <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
@@ -1168,7 +1168,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
       <p class="axis-caption">x{snapshot.yawNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
      </article>
 
-     <article class="axis-card yaw-pos">
+     <article class={`axis-card yaw-pos ${snapshot.lookYawNormRaw >= 0 ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Yaw+ (Right)</span>
        <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
@@ -1198,7 +1198,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
       <p class="axis-caption">x{snapshot.yawPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
      </article>
 
-     <article class="axis-card pitch-neg">
+     <article class={`axis-card pitch-neg ${snapshot.lookPitchNormRaw < 0 ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Pitch- (Down)</span>
        <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>

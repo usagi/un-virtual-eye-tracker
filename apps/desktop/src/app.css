@@ -357,6 +357,17 @@ textarea {
  gap: 7px;
 }
 
+.axis-card.axis-active {
+ border-color: #16c4bbaa;
+ box-shadow: 0 0 8px 1px #16c4bb44;
+ transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.axis-card.axis-inactive {
+ opacity: 0.55;
+ transition: opacity 0.18s;
+}
+
 .axis-head {
  display: flex;
  align-items: baseline;
