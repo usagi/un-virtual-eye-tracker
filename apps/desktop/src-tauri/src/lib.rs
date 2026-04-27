@@ -12,7 +12,7 @@ use std::process::{Child, Command, Stdio};
 use serde::Serialize;
 use tauri::State;
 use unvet_config::{
- AppConfig, InputConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind, OutputSendFilterConfig,
+ AppConfig, ClutchHotkeyMode, InputConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind, OutputSendFilterConfig,
  OutputSendFilterMode, VmcOscPassthroughConfig, VmcOscPassthroughMode,
 };
 use unvet_core::{
@@ -168,6 +168,7 @@ struct RuntimeSnapshot {
  output_enabled: bool,
  output_clutch_engaged: bool,
  output_clutch_hotkey: String,
+ output_clutch_hotkey_mode: ClutchHotkeyMode,
  persist_session_settings: bool,
  paused: bool,
  input_source: InputSource,
@@ -203,6 +204,7 @@ impl RuntimeSnapshot {
    output_enabled: if restore { config.output.enabled } else { true },
    output_clutch_engaged: true,
    output_clutch_hotkey: config.runtime.hotkey_toggle.clone(),
+   output_clutch_hotkey_mode: config.runtime.clutch_hotkey_mode,
    persist_session_settings: restore,
    paused: false,
    input_source: if restore { config.input.source } else { InputSource::default() },
@@ -405,6 +407,15 @@ fn set_output_clutch_hotkey(hotkey: String, state: State<RuntimeState>) -> Resul
  drop(guard);
  persist_runtime_preferences_or_set_error(state.inner());
  Ok(())
+}
+
+#[tauri::command]
+fn set_output_clutch_hotkey_mode(mode: ClutchHotkeyMode, state: State<RuntimeState>) {
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.snapshot.output_clutch_hotkey_mode = mode;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+ persist_runtime_preferences_or_set_error(state.inner());
 }
 
 #[tauri::command]
@@ -611,6 +622,7 @@ pub fn run() {
    set_output_enabled,
    set_output_clutch,
    set_output_clutch_hotkey,
+   set_output_clutch_hotkey_mode,
    set_persist_session_settings,
    set_output_axis_multipliers,
    set_output_axis_inversion,
@@ -1123,18 +1135,20 @@ fn persist_session_settings_if_enabled_or_set_error(state: &RuntimeState) {
 }
 
 fn persist_runtime_preferences(state: &RuntimeState) -> Result<(), String> {
- let (config_path, persist_session_settings, output_clutch_hotkey) = {
+ let (config_path, persist_session_settings, output_clutch_hotkey, output_clutch_hotkey_mode) = {
   let guard = state.shared.lock().expect("runtime state lock");
   (
    guard.config_path.clone(),
    guard.snapshot.persist_session_settings,
    guard.snapshot.output_clutch_hotkey.clone(),
+   guard.snapshot.output_clutch_hotkey_mode,
   )
  };
 
  let mut config = AppConfig::load_or_default(&config_path).map_err(|error| format!("failed to load config for persistence: {error}"))?;
  config.runtime.persist_session_settings = persist_session_settings;
  config.runtime.hotkey_toggle = output_clutch_hotkey;
+ config.runtime.clutch_hotkey_mode = output_clutch_hotkey_mode;
  config
   .save_to_path(&config_path)
   .map_err(|error| format!("failed to save config for persistence: {error}"))
