@@ -128,17 +128,20 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
   response_curve,
  };
 
+ let yaw_raw = map_angle_to_normalized(mixed_yaw, yaw_settings);
+ let pitch_raw = map_angle_to_normalized(mixed_pitch, pitch_settings);
+
  OutputFrame {
   look_yaw_norm: {
-   let yaw_raw = map_angle_to_normalized(mixed_yaw, yaw_settings);
    let yaw_multiplier = if yaw_raw >= 0.0 { mapping.yaw_pos_output_multiplier } else { mapping.yaw_neg_output_multiplier };
    (yaw_raw * yaw_multiplier * if mapping.invert_output_yaw { -1.0 } else { 1.0 }).clamp(-1.0, 1.0)
   },
   look_pitch_norm: {
-   let pitch_raw = map_angle_to_normalized(mixed_pitch, pitch_settings);
    let pitch_multiplier = if pitch_raw >= 0.0 { mapping.pitch_pos_output_multiplier } else { mapping.pitch_neg_output_multiplier };
    (pitch_raw * pitch_multiplier * if mapping.invert_output_pitch { -1.0 } else { 1.0 }).clamp(-1.0, 1.0)
   },
+  look_yaw_norm_raw: yaw_raw,
+  look_pitch_norm_raw: pitch_raw,
   confidence: frame.confidence,
   active: frame.active,
  }

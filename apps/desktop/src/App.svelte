@@ -74,6 +74,8 @@
   outputEasingAlpha: 0.18,
   lookYawNorm: 0,
   lookPitchNorm: 0,
+  lookYawNormRaw: 0,
+  lookPitchNormRaw: 0,
   confidence: 0,
   active: false,
   lastError: null,
@@ -970,8 +972,8 @@ const AXIS_MULTIPLIER_MAX = 9.0
      <p class={`pill ${snapshot.active ? 'ok' : 'warn'}`}>
       {snapshot.active ? 'Active' : 'Idle'}
      </p>
-     <span>Yaw {snapshot.lookYawNorm.toFixed(3)}</span>
-     <span>Pitch {snapshot.lookPitchNorm.toFixed(3)}</span>
+     <span>Yaw {snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</span>
+     <span>Pitch {snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</span>
     </article>
    </section>
 
@@ -1109,7 +1111,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
      <article class="axis-card">
       <div class="axis-head">
        <span>Yaw+ (Right)</span>
-       <output>{snapshot.lookYawNorm.toFixed(3)}</output>
+       <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
        <input
@@ -1139,7 +1141,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
      <article class="axis-card">
       <div class="axis-head">
        <span>Yaw- (Left)</span>
-       <output>{snapshot.lookYawNorm.toFixed(3)}</output>
+       <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
        <input
@@ -1169,7 +1171,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
      <article class="axis-card">
       <div class="axis-head">
        <span>Pitch+ (Up)</span>
-       <output>{snapshot.lookPitchNorm.toFixed(3)}</output>
+       <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
        <input
@@ -1199,7 +1201,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
      <article class="axis-card">
       <div class="axis-head">
        <span>Pitch- (Down)</span>
-       <output>{snapshot.lookPitchNorm.toFixed(3)}</output>
+       <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
        <input

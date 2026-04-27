@@ -176,6 +176,8 @@ impl TrackingFrame {
 pub struct OutputFrame {
  pub look_yaw_norm: f32,
  pub look_pitch_norm: f32,
+ pub look_yaw_norm_raw: f32,
+ pub look_pitch_norm_raw: f32,
  pub confidence: f32,
  pub active: bool,
 }
@@ -185,6 +187,8 @@ impl Default for OutputFrame {
   Self {
    look_yaw_norm: 0.0,
    look_pitch_norm: 0.0,
+   look_yaw_norm_raw: 0.0,
+   look_pitch_norm_raw: 0.0,
    confidence: 0.0,
    active: false,
   }

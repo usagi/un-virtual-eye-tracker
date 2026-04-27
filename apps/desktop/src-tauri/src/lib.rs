@@ -190,6 +190,8 @@ struct RuntimeSnapshot {
  output_easing_alpha: f32,
  look_yaw_norm: f32,
  look_pitch_norm: f32,
+ look_yaw_norm_raw: f32,
+ look_pitch_norm_raw: f32,
  confidence: f32,
  active: bool,
  last_error: Option<String>,
@@ -273,6 +275,8 @@ impl RuntimeSnapshot {
    },
    look_yaw_norm: 0.0,
    look_pitch_norm: 0.0,
+   look_yaw_norm_raw: 0.0,
+   look_pitch_norm_raw: 0.0,
    confidence: 0.0,
    active: false,
    last_error: None,
@@ -1067,6 +1071,8 @@ fn refresh_snapshot_from_frame(
  let mut guard = shared.lock().expect("runtime state lock");
  guard.snapshot.look_yaw_norm = frame.look_yaw_norm;
  guard.snapshot.look_pitch_norm = frame.look_pitch_norm;
+ guard.snapshot.look_yaw_norm_raw = frame.look_yaw_norm_raw;
+ guard.snapshot.look_pitch_norm_raw = frame.look_pitch_norm_raw;
  guard.snapshot.confidence = frame.confidence;
  guard.snapshot.active = frame.active;
  guard.snapshot.input_connected = input_connected;
@@ -1386,17 +1392,20 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
   response_curve,
  };
 
+ let yaw_raw = map_angle_to_normalized(mixed_yaw, yaw_settings);
+ let pitch_raw = map_angle_to_normalized(mixed_pitch, pitch_settings);
+
  OutputFrame {
   look_yaw_norm: {
-   let yaw_raw = map_angle_to_normalized(mixed_yaw, yaw_settings);
    let yaw_multiplier = if yaw_raw >= 0.0 { mapping.yaw_pos_output_multiplier } else { mapping.yaw_neg_output_multiplier };
    (yaw_raw * yaw_multiplier * if mapping.invert_output_yaw { -1.0 } else { 1.0 }).clamp(-1.0, 1.0)
   },
   look_pitch_norm: {
-   let pitch_raw = map_angle_to_normalized(mixed_pitch, pitch_settings);
    let pitch_multiplier = if pitch_raw >= 0.0 { mapping.pitch_pos_output_multiplier } else { mapping.pitch_neg_output_multiplier };
    (pitch_raw * pitch_multiplier * if mapping.invert_output_pitch { -1.0 } else { 1.0 }).clamp(-1.0, 1.0)
   },
+  look_yaw_norm_raw: yaw_raw,
+  look_pitch_norm_raw: pitch_raw,
   confidence: frame.confidence,
   active: frame.active,
  }

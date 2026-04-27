@@ -32,6 +32,8 @@ export type RuntimeSnapshot = {
   outputEasingAlpha: number;
   lookYawNorm: number;
   lookPitchNorm: number;
+  lookYawNormRaw: number;
+  lookPitchNormRaw: number;
   confidence: number;
   active: boolean;
   lastError: string | null;
