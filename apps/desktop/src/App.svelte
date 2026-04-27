@@ -1133,7 +1133,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onYawPosMultiplierInput}
        />
       </div>
-      <p class="axis-caption">Output x{snapshot.yawPosOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">x{snapshot.yawPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
      </article>
 
      <article class="axis-card">
@@ -1163,7 +1163,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onYawNegMultiplierInput}
        />
       </div>
-      <p class="axis-caption">Output x{snapshot.yawNegOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">x{snapshot.yawNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
      </article>
 
      <article class="axis-card">
@@ -1193,7 +1193,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onPitchPosMultiplierInput}
        />
       </div>
-      <p class="axis-caption">Output x{snapshot.pitchPosOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">x{snapshot.pitchPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
      </article>
 
      <article class="axis-card">
@@ -1223,7 +1223,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onPitchNegMultiplierInput}
        />
       </div>
-      <p class="axis-caption">Output x{snapshot.pitchNegOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">x{snapshot.pitchNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
      </article>
     </div>
 
