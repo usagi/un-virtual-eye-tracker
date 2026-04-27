@@ -4,12 +4,14 @@ export type InputSource = "ifacialmocap_udp" | "ifacialmocap_tcp" | "vmc_osc";
 export type OutputBackendKind = "ets2" | "mouse" | "keyboard" | "touch";
 export type OutputSendFilterMode = "unrestricted" | "foreground_process";
 export type VmcOscPassthroughMode = "raw_udp_forward";
+export type ClutchHotkeyMode = "toggle" | "press_on_release_off";
 
 export type RuntimeSnapshot = {
   inputConnected: boolean;
   outputEnabled: boolean;
   outputClutchEngaged: boolean;
   outputClutchHotkey: string;
+  outputClutchHotkeyMode: ClutchHotkeyMode;
   persistSessionSettings: boolean;
   paused: boolean;
   inputSource: InputSource;
@@ -50,6 +52,9 @@ export const setOutputClutch = (engaged: boolean) =>
 
 export const setOutputClutchHotkey = (hotkey: string) =>
   invokeRuntime<void>("set_output_clutch_hotkey", { hotkey });
+
+export const setOutputClutchHotkeyMode = (mode: ClutchHotkeyMode) =>
+  invokeRuntime<void>("set_output_clutch_hotkey_mode", { mode });
 
 export const setPersistSessionSettings = (enabled: boolean) =>
   invokeRuntime<void>("set_persist_session_settings", { enabled });

@@ -14,6 +14,7 @@
   setOutputAxisInversion,
   setOutputClutch,
   setOutputClutchHotkey,
+  setOutputClutchHotkeyMode,
   setOutputEasing,
   setOutputEnabled,
   setPersistSessionSettings,
@@ -22,6 +23,7 @@
   type OutputBackendKind,
   type OutputSendFilterMode,
   type VmcOscPassthroughMode,
+  type ClutchHotkeyMode,
   type RuntimeSnapshot,
  } from './lib/runtime'
 
@@ -47,11 +49,17 @@
   { value: 'raw_udp_forward', label: 'raw_udp_forward' },
  ]
 
+ const CLUTCH_HOTKEY_MODES: Array<{ value: ClutchHotkeyMode; label: string }> = [
+  { value: 'toggle', label: 'ON/OFFトグル' },
+  { value: 'press_on_release_off', label: 'プレスON/リリースOFF' },
+ ]
+
  const EMPTY_SNAPSHOT: RuntimeSnapshot = {
   inputConnected: false,
   outputEnabled: false,
   outputClutchEngaged: true,
   outputClutchHotkey: 'Ctrl+Shift+E',
+  outputClutchHotkeyMode: 'toggle' as ClutchHotkeyMode,
   persistSessionSettings: true,
   paused: false,
   inputSource: 'vmc_osc',
@@ -852,6 +860,11 @@ const AXIS_MULTIPLIER_MAX = 9.0
   })
  }
 
+ function onClutchHotkeyModeChange(event: Event) {
+  const mode = (event.currentTarget as HTMLSelectElement).value as ClutchHotkeyMode
+  void applyAction(`Set clutch hotkey mode=${mode}`, () => setOutputClutchHotkeyMode(mode))
+ }
+
  onMount(() => {
   pushLog('info', 'ui', 'UNVET control deck started')
   void refreshSnapshot()
@@ -874,10 +887,44 @@ const AXIS_MULTIPLIER_MAX = 9.0
    }
 
    event.preventDefault()
-   toggleLiveSendFromHotkey()
+
+   if (snapshot.outputClutchHotkeyMode === 'press_on_release_off') {
+    void applyAction('Set live send=true (hotkey press)', async () => {
+     await setOutputEnabled(true)
+     await setOutputClutch(true)
+    })
+   } else {
+    toggleLiveSendFromHotkey()
+   }
+  }
+
+  const onKeyUp = (event: KeyboardEvent) => {
+   if (snapshot.outputClutchHotkeyMode !== 'press_on_release_off') {
+    return
+   }
+
+   const parsedShortcut = parseShortcut(snapshot.outputClutchHotkey)
+   if (!parsedShortcut) {
+    return
+   }
+   if (shouldIgnoreHotkeyForTextInput(event, parsedShortcut)) {
+    return
+   }
+
+   const keyMatches = normalizeKeyboardKey(event.key) === parsedShortcut.key
+   if (!keyMatches) {
+    return
+   }
+
+   event.preventDefault()
+   void applyAction('Set live send=false (hotkey release)', async () => {
+    await setOutputEnabled(false)
+    await setOutputClutch(false)
+   })
   }
 
   window.addEventListener('keydown', onKeyDown, { capture: true })
+  window.addEventListener('keyup', onKeyUp, { capture: true })
 
   poller = window.setInterval(() => {
    void refreshSnapshot()
@@ -894,6 +941,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
      window.clearTimeout(outputEasingApplyTimer)
     }
    window.removeEventListener('keydown', onKeyDown, true)
+   window.removeEventListener('keyup', onKeyUp, true)
    if (copyFeedbackTimer !== undefined) {
     window.clearTimeout(copyFeedbackTimer)
    }
@@ -999,6 +1047,15 @@ const AXIS_MULTIPLIER_MAX = 9.0
        Apply
       </button>
      </div>
+    </div>
+
+    <div class="control compact">
+     <label for="clutch-hotkey-mode">Clutch Shortcut Mode</label>
+     <select id="clutch-hotkey-mode" value={snapshot.outputClutchHotkeyMode} on:change={onClutchHotkeyModeChange}>
+      {#each CLUTCH_HOTKEY_MODES as option}
+       <option value={option.value}>{option.label}</option>
+      {/each}
+     </select>
     </div>
 
     {#if snapshot.inputSource === 'vmc_osc'}

@@ -46,6 +46,19 @@ impl Default for OutputBackendKind {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum ClutchHotkeyMode {
+ Toggle,
+ PressOnReleaseOff,
+}
+
+impl Default for ClutchHotkeyMode {
+ fn default() -> Self {
+  Self::Toggle
+ }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum MappingCurvePreset {
  Linear,
  Smooth,
@@ -259,6 +272,7 @@ pub struct RuntimeConfig {
  pub persist_session_settings: bool,
  pub hotkey_toggle: String,
  pub hotkey_recalibrate: String,
+ pub clutch_hotkey_mode: ClutchHotkeyMode,
 }
 
 impl Default for RuntimeConfig {
@@ -268,6 +282,7 @@ impl Default for RuntimeConfig {
    persist_session_settings: true,
    hotkey_toggle: "Ctrl+Shift+E".to_owned(),
    hotkey_recalibrate: "Ctrl+Shift+R".to_owned(),
+   clutch_hotkey_mode: ClutchHotkeyMode::default(),
   }
  }
 }
