@@ -354,10 +354,29 @@ impl CalibrationConfig {
  }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct InputFilterConfig {
+ /// Suppress sudden tracking-loss "origin spikes" by holding the last known-good
+ /// frame when the input jumps to near-origin unexpectedly.
+ /// Useful with MediaPipe-based senders (e.g. Warudo) that fall back to neutral
+ /// pose during brief tracking failures.
+ pub spike_rejection_enabled: bool,
+}
+
+impl Default for InputFilterConfig {
+ fn default() -> Self {
+  Self {
+   spike_rejection_enabled: false,
+  }
+ }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct AppConfig {
  pub input: InputConfig,
+ pub input_filter: InputFilterConfig,
  pub vmc_osc_passthrough: VmcOscPassthroughConfig,
  pub output: OutputConfig,
  pub mapping: MappingConfig,

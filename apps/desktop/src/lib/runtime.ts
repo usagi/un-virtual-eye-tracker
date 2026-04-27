@@ -26,6 +26,7 @@ export type RuntimeSnapshot = {
   pitchOutputMultiplier: number;
   invertOutputYaw: boolean;
   invertOutputPitch: boolean;
+  spikeRejectionEnabled: boolean;
   outputEasingEnabled: boolean;
   outputEasingAlpha: number;
   lookYawNorm: number;
@@ -109,3 +110,6 @@ export const listRunningProcesses = () =>
 
 export const requestRecalibration = () =>
   invokeRuntime<void>("request_recalibration");
+
+export const setSpikeRejectionEnabled = (enabled: boolean) =>
+  invokeRuntime<void>("set_spike_rejection_enabled", { enabled });

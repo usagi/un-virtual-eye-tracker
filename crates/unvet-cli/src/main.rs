@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, VmcOscPassthroughMode};
 use unvet_core::{
  calibration::NeutralPoseCalibration,
- filter::OutputFrameSmoother,
+ filter::{OutputFrameSmoother, TrackingFrameStabilizer},
  logging,
  mapping::{map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix, AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset},
  model::{OutputFrame, TrackingFrame},
@@ -171,6 +171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   .smoothing_alpha
   .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
  let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
+ let mut frame_stabilizer = TrackingFrameStabilizer::new(config.input_filter.spike_rejection_enabled);
 
  let mut output_layer = OutputBackendLayer::new(&config.output);
  output_layer.set_enabled(config.output.enabled)?;
@@ -208,7 +209,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(path = %config_path.display(), "neutral calibration captured and persisted");
    }
 
-   let calibrated_frame = calibration.apply(frame);
+   let stable_frame = frame_stabilizer.update(frame);
+   let calibrated_frame = calibration.apply(stable_frame);
    let output_frame = build_output_frame(calibrated_frame, &active_mapping, config.input.source);
    let smoothed_output = if active_mapping.output_easing_enabled {
     frame_smoother.update(output_frame)
