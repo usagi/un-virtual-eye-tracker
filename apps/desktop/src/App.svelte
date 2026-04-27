@@ -73,8 +73,10 @@
   outputSendFilterProcessNames: [],
   outputSendFilterAllowed: true,
   outputSendFilterActiveProcess: null,
-  yawOutputMultiplier: 1,
-  pitchOutputMultiplier: 1,
+  yawPosOutputMultiplier: 1,
+  yawNegOutputMultiplier: 1,
+  pitchPosOutputMultiplier: 1,
+  pitchNegOutputMultiplier: 1,
   invertOutputYaw: false,
   invertOutputPitch: false,
   spikeRejectionEnabled: false,
@@ -82,6 +84,8 @@
   outputEasingAlpha: 0.18,
   lookYawNorm: 0,
   lookPitchNorm: 0,
+  lookYawNormRaw: 0,
+  lookPitchNormRaw: 0,
   confidence: 0,
   active: false,
   lastError: null,
@@ -144,8 +148,10 @@ const AXIS_MULTIPLIER_MAX = 9.0
  let vmcOscPassthroughTargetsDraft = ''
  let vmcOscPassthroughTargetsDirty = false
 
- let yawMultiplierDraft = 1
- let pitchMultiplierDraft = 1
+ let yawPosMultiplierDraft = 1
+ let yawNegMultiplierDraft = 1
+ let pitchPosMultiplierDraft = 1
+ let pitchNegMultiplierDraft = 1
  let axisLastEditAt = 0
  let axisApplyTimer: number | undefined
 
@@ -485,8 +491,10 @@ const AXIS_MULTIPLIER_MAX = 9.0
   }
 
    if (Date.now() - axisLastEditAt > AXIS_SYNC_GRACE_MS) {
-    yawMultiplierDraft = latest.yawOutputMultiplier
-    pitchMultiplierDraft = latest.pitchOutputMultiplier
+    yawPosMultiplierDraft = latest.yawPosOutputMultiplier
+    yawNegMultiplierDraft = latest.yawNegOutputMultiplier
+    pitchPosMultiplierDraft = latest.pitchPosOutputMultiplier
+    pitchNegMultiplierDraft = latest.pitchNegOutputMultiplier
    }
 
     if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
@@ -567,15 +575,19 @@ const AXIS_MULTIPLIER_MAX = 9.0
  }
 
  async function applyAxisMultipliersLive() {
-  const yaw = clampAxisMultiplier(yawMultiplierDraft)
-  const pitch = clampAxisMultiplier(pitchMultiplierDraft)
+  const yawPos = clampAxisMultiplier(yawPosMultiplierDraft)
+  const yawNeg = clampAxisMultiplier(yawNegMultiplierDraft)
+  const pitchPos = clampAxisMultiplier(pitchPosMultiplierDraft)
+  const pitchNeg = clampAxisMultiplier(pitchNegMultiplierDraft)
 
-  yawMultiplierDraft = yaw
-  pitchMultiplierDraft = pitch
+  yawPosMultiplierDraft = yawPos
+  yawNegMultiplierDraft = yawNeg
+  pitchPosMultiplierDraft = pitchPos
+  pitchNegMultiplierDraft = pitchNeg
 
   try {
    actionError = ''
-   await setOutputAxisMultipliers(yaw, pitch)
+   await setOutputAxisMultipliers(yawPos, yawNeg, pitchPos, pitchNeg)
   } catch (error) {
    const message = String(error)
    actionError = message
@@ -673,23 +685,43 @@ const AXIS_MULTIPLIER_MAX = 9.0
   queueOutputEasingApply()
  }
 
- function onYawMultiplierInput(event: Event) {
+ function onYawPosMultiplierInput(event: Event) {
   const parsed = Number((event.currentTarget as HTMLInputElement).value)
   if (!Number.isFinite(parsed)) {
    return
   }
 
-  yawMultiplierDraft = clampAxisMultiplier(parsed)
+  yawPosMultiplierDraft = clampAxisMultiplier(parsed)
   queueAxisMultiplierApply()
  }
 
- function onPitchMultiplierInput(event: Event) {
+ function onYawNegMultiplierInput(event: Event) {
   const parsed = Number((event.currentTarget as HTMLInputElement).value)
   if (!Number.isFinite(parsed)) {
    return
   }
 
-  pitchMultiplierDraft = clampAxisMultiplier(parsed)
+  yawNegMultiplierDraft = clampAxisMultiplier(parsed)
+  queueAxisMultiplierApply()
+ }
+
+ function onPitchPosMultiplierInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  pitchPosMultiplierDraft = clampAxisMultiplier(parsed)
+  queueAxisMultiplierApply()
+ }
+
+ function onPitchNegMultiplierInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  pitchNegMultiplierDraft = clampAxisMultiplier(parsed)
   queueAxisMultiplierApply()
  }
 
@@ -1004,8 +1036,8 @@ const AXIS_MULTIPLIER_MAX = 9.0
      <p class={`pill ${snapshot.active ? 'ok' : 'warn'}`}>
       {snapshot.active ? 'Active' : 'Idle'}
      </p>
-     <span>Yaw {snapshot.lookYawNorm.toFixed(3)}</span>
-     <span>Pitch {snapshot.lookPitchNorm.toFixed(3)}</span>
+     <span>Yaw {snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</span>
+     <span>Pitch {snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</span>
     </article>
    </section>
 
@@ -1149,64 +1181,124 @@ const AXIS_MULTIPLIER_MAX = 9.0
     <h2>Axis Tuning (Instant Apply)</h2>
 
     <div class="axis-grid">
-     <article class="axis-card">
+     <article class={`axis-card pitch-pos ${snapshot.lookPitchNormRaw >= 0 ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
-       <span>Yaw</span>
-       <output>{snapshot.lookYawNorm.toFixed(3)}</output>
+       <span>Pitch+ (Up)</span>
+       <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
        <input
-        id="yaw-output-multiplier-range"
+        id="pitch-pos-output-multiplier-range"
         class="axis-slider"
         type="range"
         min={AXIS_MULTIPLIER_MIN}
         max={AXIS_MULTIPLIER_MAX}
         step={AXIS_MULTIPLIER_STEP}
-        value={yawMultiplierDraft}
-        on:input={onYawMultiplierInput}
+        value={pitchPosMultiplierDraft}
+        on:input={onPitchPosMultiplierInput}
        />
        <input
-        id="yaw-output-multiplier-number"
+        id="pitch-pos-output-multiplier-number"
         class="axis-number"
         type="number"
         min={AXIS_MULTIPLIER_MIN}
         max={AXIS_MULTIPLIER_MAX}
         step={AXIS_MULTIPLIER_STEP}
-        value={yawMultiplierDraft}
-        on:input={onYawMultiplierInput}
+        value={pitchPosMultiplierDraft}
+        on:input={onPitchPosMultiplierInput}
        />
       </div>
-      <p class="axis-caption">Output x{snapshot.yawOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">x{snapshot.pitchPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
      </article>
 
-     <article class="axis-card">
+     <article class={`axis-card yaw-neg ${snapshot.lookYawNormRaw < 0 ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
-       <span>Pitch</span>
-       <output>{snapshot.lookPitchNorm.toFixed(3)}</output>
+       <span>Yaw- (Left)</span>
+       <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
        <input
-        id="pitch-output-multiplier-range"
+        id="yaw-neg-output-multiplier-range"
         class="axis-slider"
         type="range"
         min={AXIS_MULTIPLIER_MIN}
         max={AXIS_MULTIPLIER_MAX}
         step={AXIS_MULTIPLIER_STEP}
-        value={pitchMultiplierDraft}
-        on:input={onPitchMultiplierInput}
+        value={yawNegMultiplierDraft}
+        on:input={onYawNegMultiplierInput}
        />
        <input
-        id="pitch-output-multiplier-number"
+        id="yaw-neg-output-multiplier-number"
         class="axis-number"
         type="number"
         min={AXIS_MULTIPLIER_MIN}
         max={AXIS_MULTIPLIER_MAX}
         step={AXIS_MULTIPLIER_STEP}
-        value={pitchMultiplierDraft}
-        on:input={onPitchMultiplierInput}
+        value={yawNegMultiplierDraft}
+        on:input={onYawNegMultiplierInput}
        />
       </div>
-      <p class="axis-caption">Output x{snapshot.pitchOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">x{snapshot.yawNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
+     </article>
+
+     <article class={`axis-card yaw-pos ${snapshot.lookYawNormRaw >= 0 ? 'axis-active' : 'axis-inactive'}`}>
+      <div class="axis-head">
+       <span>Yaw+ (Right)</span>
+       <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
+      </div>
+      <div class="axis-editor">
+       <input
+        id="yaw-pos-output-multiplier-range"
+        class="axis-slider"
+        type="range"
+        min={AXIS_MULTIPLIER_MIN}
+        max={AXIS_MULTIPLIER_MAX}
+        step={AXIS_MULTIPLIER_STEP}
+        value={yawPosMultiplierDraft}
+        on:input={onYawPosMultiplierInput}
+       />
+       <input
+        id="yaw-pos-output-multiplier-number"
+        class="axis-number"
+        type="number"
+        min={AXIS_MULTIPLIER_MIN}
+        max={AXIS_MULTIPLIER_MAX}
+        step={AXIS_MULTIPLIER_STEP}
+        value={yawPosMultiplierDraft}
+        on:input={onYawPosMultiplierInput}
+       />
+      </div>
+      <p class="axis-caption">x{snapshot.yawPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
+     </article>
+
+     <article class={`axis-card pitch-neg ${snapshot.lookPitchNormRaw < 0 ? 'axis-active' : 'axis-inactive'}`}>
+      <div class="axis-head">
+       <span>Pitch- (Down)</span>
+       <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
+      </div>
+      <div class="axis-editor">
+       <input
+        id="pitch-neg-output-multiplier-range"
+        class="axis-slider"
+        type="range"
+        min={AXIS_MULTIPLIER_MIN}
+        max={AXIS_MULTIPLIER_MAX}
+        step={AXIS_MULTIPLIER_STEP}
+        value={pitchNegMultiplierDraft}
+        on:input={onPitchNegMultiplierInput}
+       />
+       <input
+        id="pitch-neg-output-multiplier-number"
+        class="axis-number"
+        type="number"
+        min={AXIS_MULTIPLIER_MIN}
+        max={AXIS_MULTIPLIER_MAX}
+        step={AXIS_MULTIPLIER_STEP}
+        value={pitchNegMultiplierDraft}
+        on:input={onPitchNegMultiplierInput}
+       />
+      </div>
+      <p class="axis-caption">x{snapshot.pitchNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
      </article>
     </div>
 
@@ -1221,7 +1313,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
          <input type="checkbox" checked={invertPitchDraft} on:change={onInvertPitchToggle} />
          <span>Pitch invert</span>
         </label>
-        <p class="axis-caption">Pitch が逆向きに感じる場合は Pitch invert を有効化</p>
+        <p class="axis-caption">入力方向を反転します。Pitch が逆向きに感じる場合は Pitch invert を有効化</p>
        </article>
 
        <article class="axis-advanced-card">
