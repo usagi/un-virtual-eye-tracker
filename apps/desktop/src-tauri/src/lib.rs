@@ -17,7 +17,7 @@ use unvet_config::{
 };
 use unvet_core::{
  calibration::NeutralPoseCalibration,
- filter::OutputFrameSmoother,
+ filter::{OutputFrameSmoother, TrackingFrameStabilizer},
  mapping::{map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix, AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset},
  model::{OutputFrame, TrackingFrame},
  ports::InputReceiver,
@@ -184,6 +184,7 @@ struct RuntimeSnapshot {
  pitch_output_multiplier: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
+ spike_rejection_enabled: bool,
  output_easing_enabled: bool,
  output_easing_alpha: f32,
  look_yaw_norm: f32,
@@ -251,6 +252,7 @@ impl RuntimeSnapshot {
    } else {
     1.0
    },
+   spike_rejection_enabled: if restore { config.input_filter.spike_rejection_enabled } else { false },
    invert_output_yaw: if restore { config.mapping.invert_output_yaw } else { false },
    invert_output_pitch: if restore { config.mapping.invert_output_pitch } else { false },
    output_easing_enabled: if restore { config.mapping.output_easing_enabled } else { true },
@@ -288,6 +290,7 @@ struct RuntimeShared {
  desired_pitch_output_multiplier: f32,
  desired_invert_output_yaw: bool,
  desired_invert_output_pitch: bool,
+ desired_spike_rejection_enabled: bool,
  desired_output_easing_enabled: bool,
  desired_output_easing_alpha: f32,
  desired_persist_session_settings: bool,
@@ -323,6 +326,7 @@ impl RuntimeState {
     desired_pitch_output_multiplier: snapshot.pitch_output_multiplier,
     desired_invert_output_yaw: snapshot.invert_output_yaw,
     desired_invert_output_pitch: snapshot.invert_output_pitch,
+    desired_spike_rejection_enabled: snapshot.spike_rejection_enabled,
     desired_output_easing_enabled: snapshot.output_easing_enabled,
     desired_output_easing_alpha: snapshot.output_easing_alpha,
     desired_persist_session_settings: snapshot.persist_session_settings,
@@ -349,6 +353,7 @@ struct RuntimeDesired {
  pitch_output_multiplier: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
+ spike_rejection_enabled: bool,
  output_easing_enabled: bool,
  output_easing_alpha: f32,
  paused: bool,
@@ -454,6 +459,17 @@ fn set_output_easing(enabled: bool, alpha: f32, state: State<RuntimeState>) {
  guard.desired_output_easing_alpha = clamped_alpha;
  guard.snapshot.output_easing_enabled = enabled;
  guard.snapshot.output_easing_alpha = clamped_alpha;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+}
+
+#[tauri::command]
+fn set_spike_rejection_enabled(enabled: bool, state: State<RuntimeState>) {
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_spike_rejection_enabled = enabled;
+ guard.snapshot.spike_rejection_enabled = enabled;
  guard.snapshot.updated_at_ms = now_millis();
  drop(guard);
 
@@ -609,6 +625,7 @@ pub fn run() {
    set_output_send_filter,
    list_running_processes,
    request_recalibration,
+   set_spike_rejection_enabled,
   ])
   .setup(|app| {
    if cfg!(debug_assertions) {
@@ -757,6 +774,7 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    .smoothing_alpha
    .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
   let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
+  let mut frame_stabilizer = TrackingFrameStabilizer::new(config.input_filter.spike_rejection_enabled);
   let mut calibration = build_calibration(&config);
 
   let mut active_input_config = config.input.clone();
@@ -806,6 +824,10 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     if !active_mapping.output_easing_enabled {
      frame_smoother.reset();
     }
+   }
+
+   if frame_stabilizer.is_enabled() != desired.spike_rejection_enabled {
+    frame_stabilizer.set_enabled(desired.spike_rejection_enabled);
    }
 
    let mut input_needs_reconnect = false;
@@ -917,7 +939,8 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
      calibration.calibrate_from_frame(frame);
     }
 
-    let calibrated_frame = calibration.apply(frame);
+    let stable_frame = frame_stabilizer.update(frame);
+    let calibrated_frame = calibration.apply(stable_frame);
     let output_frame = build_output_frame(calibrated_frame, &active_mapping, active_input_source);
     let smoothed_output = if active_mapping.output_easing_enabled {
      frame_smoother.update(output_frame)
@@ -1011,6 +1034,7 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
   pitch_output_multiplier: guard.desired_pitch_output_multiplier,
   invert_output_yaw: guard.desired_invert_output_yaw,
   invert_output_pitch: guard.desired_invert_output_pitch,
+  spike_rejection_enabled: guard.desired_spike_rejection_enabled,
   output_easing_enabled: guard.desired_output_easing_enabled,
   output_easing_alpha: guard.desired_output_easing_alpha,
   paused: guard.desired_paused,
@@ -1133,6 +1157,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   pitch_output_multiplier,
   invert_output_yaw,
   invert_output_pitch,
+  spike_rejection_enabled,
   output_easing_enabled,
   output_easing_alpha,
  ) = {
@@ -1153,6 +1178,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.snapshot.pitch_output_multiplier,
    guard.snapshot.invert_output_yaw,
    guard.snapshot.invert_output_pitch,
+   guard.snapshot.spike_rejection_enabled,
    guard.snapshot.output_easing_enabled,
    guard.snapshot.output_easing_alpha,
   )
@@ -1178,6 +1204,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
  config.mapping.pitch_output_multiplier = pitch_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
  config.mapping.invert_output_yaw = invert_output_yaw;
  config.mapping.invert_output_pitch = invert_output_pitch;
+ config.input_filter.spike_rejection_enabled = spike_rejection_enabled;
  config.mapping.output_easing_enabled = output_easing_enabled;
  config.mapping.smoothing_alpha = output_easing_alpha.clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
  config

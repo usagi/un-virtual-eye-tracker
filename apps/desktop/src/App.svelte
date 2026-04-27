@@ -18,6 +18,7 @@
   setOutputEnabled,
   setPersistSessionSettings,
   setOutputSendFilter,
+  setSpikeRejectionEnabled,
   type InputSource,
   type OutputBackendKind,
   type OutputSendFilterMode,
@@ -68,6 +69,7 @@
   pitchOutputMultiplier: 1,
   invertOutputYaw: false,
   invertOutputPitch: false,
+  spikeRejectionEnabled: false,
   outputEasingEnabled: true,
   outputEasingAlpha: 0.18,
   lookYawNorm: 0,
@@ -141,6 +143,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
 
  let invertYawDraft = false
  let invertPitchDraft = false
+ let spikeRejectionEnabledDraft = false
  let outputEasingEnabledDraft = true
  let outputEasingAlphaDraft = 0.18
  let outputEasingLastEditAt = 0
@@ -481,6 +484,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
     if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
      invertYawDraft = latest.invertOutputYaw
      invertPitchDraft = latest.invertOutputPitch
+     spikeRejectionEnabledDraft = latest.spikeRejectionEnabled
      outputEasingEnabledDraft = latest.outputEasingEnabled
      outputEasingAlphaDraft = latest.outputEasingAlpha
     }
@@ -632,6 +636,18 @@ const AXIS_MULTIPLIER_MAX = 9.0
   invertPitchDraft = (event.currentTarget as HTMLInputElement).checked
   outputEasingLastEditAt = Date.now()
   void applyOutputAxisInversionLive()
+ }
+
+ async function onSpikeRejectionEnabledToggle(event: Event) {
+  spikeRejectionEnabledDraft = (event.currentTarget as HTMLInputElement).checked
+  try {
+   actionError = ''
+   await setSpikeRejectionEnabled(spikeRejectionEnabledDraft)
+  } catch (error) {
+   const message = String(error)
+   actionError = message
+   pushLog('error', 'ui', `Set spike rejection failed: ${message}`)
+  }
  }
 
  function onOutputEasingEnabledToggle(event: Event) {
@@ -1184,6 +1200,15 @@ const AXIS_MULTIPLIER_MAX = 9.0
         <p class="axis-caption">alpha {snapshot.outputEasingAlpha.toFixed(2)}（低いほど滑らか/遅い, 高いほど追従/速い）</p>
        </article>
       </div>
+
+      <article class="axis-advanced-card">
+       <h3>Input Spike Rejection</h3>
+       <label class="switch">
+        <input type="checkbox" checked={spikeRejectionEnabledDraft} on:change={onSpikeRejectionEnabledToggle} />
+        <span>Spike rejection enabled</span>
+       </label>
+       <p class="axis-caption">トラッキング失敗時に原点へ戻るガタツキを抑制（MediaPipe / Warudo 環境で有効）</p>
+      </article>
    </section>
 
    <section class="deck-section filter-panel">
