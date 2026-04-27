@@ -22,8 +22,10 @@ export type RuntimeSnapshot = {
   outputSendFilterProcessNames: string[];
   outputSendFilterAllowed: boolean;
   outputSendFilterActiveProcess: string | null;
-  yawOutputMultiplier: number;
-  pitchOutputMultiplier: number;
+  yawPosOutputMultiplier: number;
+  yawNegOutputMultiplier: number;
+  pitchPosOutputMultiplier: number;
+  pitchNegOutputMultiplier: number;
   invertOutputYaw: boolean;
   invertOutputPitch: boolean;
   outputEasingEnabled: boolean;
@@ -55,12 +57,16 @@ export const setPersistSessionSettings = (enabled: boolean) =>
   invokeRuntime<void>("set_persist_session_settings", { enabled });
 
 export const setOutputAxisMultipliers = (
-  yawOutputMultiplier: number,
-  pitchOutputMultiplier: number,
+  yawPosOutputMultiplier: number,
+  yawNegOutputMultiplier: number,
+  pitchPosOutputMultiplier: number,
+  pitchNegOutputMultiplier: number,
 ) =>
   invokeRuntime<void>("set_output_axis_multipliers", {
-    yawOutputMultiplier,
-    pitchOutputMultiplier,
+    yawPosOutputMultiplier,
+    yawNegOutputMultiplier,
+    pitchPosOutputMultiplier,
+    pitchNegOutputMultiplier,
   });
 
 export const setOutputAxisInversion = (

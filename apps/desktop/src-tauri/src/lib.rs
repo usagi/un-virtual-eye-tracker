@@ -180,8 +180,10 @@ struct RuntimeSnapshot {
  output_send_filter_process_names: Vec<String>,
  output_send_filter_allowed: bool,
  output_send_filter_active_process: Option<String>,
- yaw_output_multiplier: f32,
- pitch_output_multiplier: f32,
+ yaw_pos_output_multiplier: f32,
+ yaw_neg_output_multiplier: f32,
+ pitch_pos_output_multiplier: f32,
+ pitch_neg_output_multiplier: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  output_easing_enabled: bool,
@@ -238,16 +240,23 @@ impl RuntimeSnapshot {
     true
    },
    output_send_filter_active_process: None,
-   yaw_output_multiplier: if restore {
-    config.mapping.yaw_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+   yaw_pos_output_multiplier: if restore {
+    config.mapping.yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
    } else {
     1.0
    },
-   pitch_output_multiplier: if restore {
-    config
-     .mapping
-     .pitch_output_multiplier
-     .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+   yaw_neg_output_multiplier: if restore {
+    config.mapping.yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+   } else {
+    1.0
+   },
+   pitch_pos_output_multiplier: if restore {
+    config.mapping.pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+   } else {
+    1.0
+   },
+   pitch_neg_output_multiplier: if restore {
+    config.mapping.pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
    } else {
     1.0
    },
@@ -284,8 +293,10 @@ struct RuntimeShared {
  desired_output_send_filter: OutputSendFilterConfig,
  desired_output_enabled: bool,
  desired_output_clutch_engaged: bool,
- desired_yaw_output_multiplier: f32,
- desired_pitch_output_multiplier: f32,
+ desired_yaw_pos_output_multiplier: f32,
+ desired_yaw_neg_output_multiplier: f32,
+ desired_pitch_pos_output_multiplier: f32,
+ desired_pitch_neg_output_multiplier: f32,
  desired_invert_output_yaw: bool,
  desired_invert_output_pitch: bool,
  desired_output_easing_enabled: bool,
@@ -319,8 +330,10 @@ impl RuntimeState {
     },
     desired_output_enabled: snapshot.output_enabled,
     desired_output_clutch_engaged: true,
-    desired_yaw_output_multiplier: snapshot.yaw_output_multiplier,
-    desired_pitch_output_multiplier: snapshot.pitch_output_multiplier,
+    desired_yaw_pos_output_multiplier: snapshot.yaw_pos_output_multiplier,
+    desired_yaw_neg_output_multiplier: snapshot.yaw_neg_output_multiplier,
+    desired_pitch_pos_output_multiplier: snapshot.pitch_pos_output_multiplier,
+    desired_pitch_neg_output_multiplier: snapshot.pitch_neg_output_multiplier,
     desired_invert_output_yaw: snapshot.invert_output_yaw,
     desired_invert_output_pitch: snapshot.invert_output_pitch,
     desired_output_easing_enabled: snapshot.output_easing_enabled,
@@ -345,8 +358,10 @@ struct RuntimeDesired {
  output_send_filter: OutputSendFilterConfig,
  output_enabled: bool,
  output_clutch_engaged: bool,
- yaw_output_multiplier: f32,
- pitch_output_multiplier: f32,
+ yaw_pos_output_multiplier: f32,
+ yaw_neg_output_multiplier: f32,
+ pitch_pos_output_multiplier: f32,
+ pitch_neg_output_multiplier: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  output_easing_enabled: bool,
@@ -417,15 +432,27 @@ fn set_persist_session_settings(enabled: bool, state: State<RuntimeState>) {
 }
 
 #[tauri::command]
-fn set_output_axis_multipliers(yaw_output_multiplier: f32, pitch_output_multiplier: f32, state: State<RuntimeState>) {
- let clamped_yaw = yaw_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- let clamped_pitch = pitch_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+fn set_output_axis_multipliers(
+ yaw_pos_output_multiplier: f32,
+ yaw_neg_output_multiplier: f32,
+ pitch_pos_output_multiplier: f32,
+ pitch_neg_output_multiplier: f32,
+ state: State<RuntimeState>,
+) {
+ let clamped_yaw_pos = yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ let clamped_yaw_neg = yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ let clamped_pitch_pos = pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ let clamped_pitch_neg = pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
 
  let mut guard = state.shared.lock().expect("runtime state lock");
- guard.desired_yaw_output_multiplier = clamped_yaw;
- guard.desired_pitch_output_multiplier = clamped_pitch;
- guard.snapshot.yaw_output_multiplier = clamped_yaw;
- guard.snapshot.pitch_output_multiplier = clamped_pitch;
+ guard.desired_yaw_pos_output_multiplier = clamped_yaw_pos;
+ guard.desired_yaw_neg_output_multiplier = clamped_yaw_neg;
+ guard.desired_pitch_pos_output_multiplier = clamped_pitch_pos;
+ guard.desired_pitch_neg_output_multiplier = clamped_pitch_neg;
+ guard.snapshot.yaw_pos_output_multiplier = clamped_yaw_pos;
+ guard.snapshot.yaw_neg_output_multiplier = clamped_yaw_neg;
+ guard.snapshot.pitch_pos_output_multiplier = clamped_pitch_pos;
+ guard.snapshot.pitch_neg_output_multiplier = clamped_pitch_neg;
  guard.snapshot.updated_at_ms = now_millis();
  drop(guard);
 
@@ -749,10 +776,10 @@ fn load_config_or_default() -> (AppConfig, PathBuf) {
 fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
  thread::spawn(move || {
   let mut active_mapping = config.effective_mapping();
-  active_mapping.yaw_output_multiplier = active_mapping.yaw_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
-  active_mapping.pitch_output_multiplier = active_mapping
-   .pitch_output_multiplier
-   .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+  active_mapping.yaw_pos_output_multiplier = active_mapping.yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+  active_mapping.yaw_neg_output_multiplier = active_mapping.yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+  active_mapping.pitch_pos_output_multiplier = active_mapping.pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+  active_mapping.pitch_neg_output_multiplier = active_mapping.pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
   active_mapping.smoothing_alpha = active_mapping
    .smoothing_alpha
    .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
@@ -783,11 +810,17 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   loop {
    let desired = consume_desired(&shared);
 
-   if (active_mapping.yaw_output_multiplier - desired.yaw_output_multiplier).abs() > f32::EPSILON {
-    active_mapping.yaw_output_multiplier = desired.yaw_output_multiplier;
+   if (active_mapping.yaw_pos_output_multiplier - desired.yaw_pos_output_multiplier).abs() > f32::EPSILON {
+    active_mapping.yaw_pos_output_multiplier = desired.yaw_pos_output_multiplier;
    }
-   if (active_mapping.pitch_output_multiplier - desired.pitch_output_multiplier).abs() > f32::EPSILON {
-    active_mapping.pitch_output_multiplier = desired.pitch_output_multiplier;
+   if (active_mapping.yaw_neg_output_multiplier - desired.yaw_neg_output_multiplier).abs() > f32::EPSILON {
+    active_mapping.yaw_neg_output_multiplier = desired.yaw_neg_output_multiplier;
+   }
+   if (active_mapping.pitch_pos_output_multiplier - desired.pitch_pos_output_multiplier).abs() > f32::EPSILON {
+    active_mapping.pitch_pos_output_multiplier = desired.pitch_pos_output_multiplier;
+   }
+   if (active_mapping.pitch_neg_output_multiplier - desired.pitch_neg_output_multiplier).abs() > f32::EPSILON {
+    active_mapping.pitch_neg_output_multiplier = desired.pitch_neg_output_multiplier;
    }
    if active_mapping.invert_output_yaw != desired.invert_output_yaw {
     active_mapping.invert_output_yaw = desired.invert_output_yaw;
@@ -1007,8 +1040,10 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
   output_send_filter: guard.desired_output_send_filter.clone(),
   output_enabled: guard.desired_output_enabled,
   output_clutch_engaged: guard.desired_output_clutch_engaged,
-  yaw_output_multiplier: guard.desired_yaw_output_multiplier,
-  pitch_output_multiplier: guard.desired_pitch_output_multiplier,
+  yaw_pos_output_multiplier: guard.desired_yaw_pos_output_multiplier,
+  yaw_neg_output_multiplier: guard.desired_yaw_neg_output_multiplier,
+  pitch_pos_output_multiplier: guard.desired_pitch_pos_output_multiplier,
+  pitch_neg_output_multiplier: guard.desired_pitch_neg_output_multiplier,
   invert_output_yaw: guard.desired_invert_output_yaw,
   invert_output_pitch: guard.desired_invert_output_pitch,
   output_easing_enabled: guard.desired_output_easing_enabled,
@@ -1129,8 +1164,10 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   output_enabled,
   output_send_filter_mode,
   output_send_filter_process_names,
-  yaw_output_multiplier,
-  pitch_output_multiplier,
+  yaw_pos_output_multiplier,
+  yaw_neg_output_multiplier,
+  pitch_pos_output_multiplier,
+  pitch_neg_output_multiplier,
   invert_output_yaw,
   invert_output_pitch,
   output_easing_enabled,
@@ -1149,8 +1186,10 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.snapshot.output_enabled,
    guard.snapshot.output_send_filter_mode,
    guard.snapshot.output_send_filter_process_names.clone(),
-   guard.snapshot.yaw_output_multiplier,
-   guard.snapshot.pitch_output_multiplier,
+   guard.snapshot.yaw_pos_output_multiplier,
+   guard.snapshot.yaw_neg_output_multiplier,
+   guard.snapshot.pitch_pos_output_multiplier,
+   guard.snapshot.pitch_neg_output_multiplier,
    guard.snapshot.invert_output_yaw,
    guard.snapshot.invert_output_pitch,
    guard.snapshot.output_easing_enabled,
@@ -1174,8 +1213,10 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   mode: output_send_filter_mode,
   process_names: output_send_filter_process_names,
  };
- config.mapping.yaw_output_multiplier = yaw_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_output_multiplier = pitch_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ config.mapping.yaw_pos_output_multiplier = yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ config.mapping.yaw_neg_output_multiplier = yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ config.mapping.pitch_pos_output_multiplier = pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ config.mapping.pitch_neg_output_multiplier = pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
  config.mapping.invert_output_yaw = invert_output_yaw;
  config.mapping.invert_output_pitch = invert_output_pitch;
  config.mapping.output_easing_enabled = output_easing_enabled;
@@ -1346,14 +1387,16 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
  };
 
  OutputFrame {
-  look_yaw_norm: (map_angle_to_normalized(mixed_yaw, yaw_settings)
-   * mapping.yaw_output_multiplier
-   * if mapping.invert_output_yaw { -1.0 } else { 1.0 })
-  .clamp(-1.0, 1.0),
-  look_pitch_norm: (map_angle_to_normalized(mixed_pitch, pitch_settings)
-   * mapping.pitch_output_multiplier
-   * if mapping.invert_output_pitch { -1.0 } else { 1.0 })
-  .clamp(-1.0, 1.0),
+  look_yaw_norm: {
+   let yaw_raw = map_angle_to_normalized(mixed_yaw, yaw_settings);
+   let yaw_multiplier = if yaw_raw >= 0.0 { mapping.yaw_pos_output_multiplier } else { mapping.yaw_neg_output_multiplier };
+   (yaw_raw * yaw_multiplier * if mapping.invert_output_yaw { -1.0 } else { 1.0 }).clamp(-1.0, 1.0)
+  },
+  look_pitch_norm: {
+   let pitch_raw = map_angle_to_normalized(mixed_pitch, pitch_settings);
+   let pitch_multiplier = if pitch_raw >= 0.0 { mapping.pitch_pos_output_multiplier } else { mapping.pitch_neg_output_multiplier };
+   (pitch_raw * pitch_multiplier * if mapping.invert_output_pitch { -1.0 } else { 1.0 }).clamp(-1.0, 1.0)
+  },
   confidence: frame.confidence,
   active: frame.active,
  }
