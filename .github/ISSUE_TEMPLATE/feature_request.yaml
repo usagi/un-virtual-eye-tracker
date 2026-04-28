@@ -1,0 +1,29 @@
+name: 機能追加のリクエスト
+description: 欲しい機能の提案を共有してください
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: 分類
+      options:
+        - 入力
+        - 調整
+        - 出力
+        - その他
+    validations:
+      required: true
+
+  - type: textarea
+    id: request_detail
+    attributes:
+      label: 具体的にどんな機能が欲しいか
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 補足（任意）

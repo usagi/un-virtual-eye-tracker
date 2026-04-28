@@ -1,0 +1,51 @@
+name: 不具合の報告
+description: 問題の報告と再現情報を共有してください
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 発生している問題
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待される動作
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 具体的な再現手順
+    validations:
+      required: true
+
+  - type: dropdown
+    id: input_source
+    attributes:
+      label: 入力元（任意）
+      options:
+        - iFacialMocap
+        - VMC OSC
+        - そのほか
+
+  - type: dropdown
+    id: output_target
+    attributes:
+      label: 出力先（任意）
+      options:
+        - ETS2
+        - Keyboard
+        - Mouse
+        - Touch
+        - そのほか
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: スクリーンショットや補足情報（任意）

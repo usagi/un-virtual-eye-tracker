@@ -1,0 +1,13 @@
+name: その他
+description: 不具合報告・機能追加以外の問い合わせ
+title: "[Other]: "
+labels:
+  - question
+body:
+  - type: textarea
+    id: details
+    attributes:
+      label: 内容
+      description: 相談したいこと、共有したいことを記載してください。
+    validations:
+      required: true
