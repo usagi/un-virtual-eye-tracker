@@ -349,6 +349,7 @@ textarea {
 }
 
 .axis-card {
+ min-width: 0;
  border: 1px solid var(--line);
  border-radius: 11px;
  padding: 8px;
@@ -369,15 +370,19 @@ textarea {
 }
 
 .axis-head {
+ min-width: 0;
  display: flex;
  align-items: baseline;
  justify-content: space-between;
  font-size: 13px;
+ gap: 8px;
 }
 
 .axis-head output {
+ min-width: 0;
  font-family: var(--mono);
  font-size: 23px;
+ text-align: right;
 }
 
 .axis-editor {
@@ -388,21 +393,30 @@ textarea {
 }
 
 .axis-range-control {
+ min-width: 0;
+ max-width: 100%;
  display: grid;
- grid-template-columns: 46px minmax(0, 1fr) 132px;
+ grid-template-columns: 46px minmax(0, 1fr) minmax(108px, 132px);
  gap: 8px;
  align-items: center;
 }
 
 .axis-dual-range {
+ min-width: 0;
+ width: 100%;
+ max-width: 100%;
  position: relative;
  height: 20px;
  display: grid;
  align-items: center;
+ overflow: visible;
 }
 
 .axis-dual-range .axis-slider {
  grid-area: 1 / 1;
+ width: calc(100% - 18px);
+ min-width: 0;
+ justify-self: center;
  pointer-events: none;
 }
 
@@ -415,6 +429,7 @@ textarea {
 }
 
 .axis-number-pair {
+ min-width: 0;
  display: grid;
  grid-template-columns: 1fr 1fr;
  gap: 6px;
@@ -429,6 +444,7 @@ textarea {
 
 .axis-slider {
  width: 100%;
+ min-width: 0;
  margin: 0;
  accent-color: var(--accent);
 }
