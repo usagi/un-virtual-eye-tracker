@@ -442,6 +442,7 @@ textarea {
  min-width: 0;
  justify-self: center;
  pointer-events: none;
+ height: 20px;
  appearance: none;
  -webkit-appearance: none;
  background: transparent;
@@ -472,6 +473,7 @@ textarea {
  height: 18px;
  border: 0;
  border-radius: 50%;
+ margin-top: -6px;
  background: var(--accent-strong);
  -webkit-appearance: none;
  box-shadow: 0 0 0 1px rgba(210, 252, 255, 0.16);
