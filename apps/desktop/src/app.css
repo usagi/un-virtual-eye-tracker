@@ -402,6 +402,8 @@ textarea {
 }
 
 .axis-dual-range {
+ --range-start: 0%;
+ --range-end: 100%;
  min-width: 0;
  width: 100%;
  max-width: 100%;
@@ -412,19 +414,77 @@ textarea {
  overflow: visible;
 }
 
+.axis-dual-range::before {
+ content: "";
+ position: absolute;
+ left: 9px;
+ right: 9px;
+ top: 50%;
+ height: 6px;
+ transform: translateY(-50%);
+ border-radius: 999px;
+ background: linear-gradient(
+  to right,
+  #6b6a62 0%,
+  #6b6a62 var(--range-start),
+  var(--accent) var(--range-start),
+  var(--accent) var(--range-end),
+  #6b6a62 var(--range-end),
+  #6b6a62 100%
+ );
+ border: 1px solid rgba(210, 228, 236, 0.28);
+ box-sizing: border-box;
+}
+
 .axis-dual-range .axis-slider {
  grid-area: 1 / 1;
  width: calc(100% - 18px);
  min-width: 0;
  justify-self: center;
  pointer-events: none;
+ appearance: none;
+ -webkit-appearance: none;
+ background: transparent;
+ color: transparent;
+ z-index: 1;
+}
+
+.axis-dual-range .axis-slider::-webkit-slider-runnable-track {
+ height: 6px;
+ border: 0;
+ background: transparent;
+}
+
+.axis-dual-range .axis-slider::-moz-range-track {
+ height: 6px;
+ border: 0;
+ background: transparent;
+}
+
+.axis-dual-range .axis-slider::-moz-range-progress {
+ height: 6px;
+ border: 0;
+ background: transparent;
 }
 
 .axis-dual-range .axis-slider::-webkit-slider-thumb {
+ width: 18px;
+ height: 18px;
+ border: 0;
+ border-radius: 50%;
+ background: var(--accent-strong);
+ -webkit-appearance: none;
+ box-shadow: 0 0 0 1px rgba(210, 252, 255, 0.16);
  pointer-events: auto;
 }
 
 .axis-dual-range .axis-slider::-moz-range-thumb {
+ width: 18px;
+ height: 18px;
+ border: 0;
+ border-radius: 50%;
+ background: var(--accent-strong);
+ box-shadow: 0 0 0 1px rgba(210, 252, 255, 0.16);
  pointer-events: auto;
 }
 

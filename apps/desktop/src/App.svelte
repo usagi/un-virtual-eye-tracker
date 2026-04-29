@@ -337,6 +337,20 @@
   return `[${rangeStart.toFixed(digits)}..${rangeEnd.toFixed(digits)}]`
  }
 
+ function rangePercent(value: number, min: number, max: number): number {
+  if (max <= min) {
+   return 0
+  }
+
+  const clamped = Math.min(max, Math.max(min, value))
+  return ((clamped - min) / (max - min)) * 100
+ }
+
+ function axisRangeStyle(start: number, end: number, min: number, max: number): string {
+  const [rangeStart, rangeEnd] = orderedRange(start, end)
+  return `--range-start: ${rangePercent(rangeStart, min, max).toFixed(2)}%; --range-end: ${rangePercent(rangeEnd, min, max).toFixed(2)}%`
+ }
+
  function clampVmcOscPort(value: number): number {
   const rounded = Math.round(value)
   return Math.min(VMC_OSC_PORT_MAX, Math.max(VMC_OSC_PORT_MIN, rounded))
@@ -1276,13 +1290,13 @@
       </div>
       <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <div class="axis-dual-range">
+        <div class="axis-dual-range" style={axisRangeStyle(pitchPosInputStartDraft, pitchPosInputEndDraft, AXIS_INPUT_RANGE_MIN, AXIS_INPUT_RANGE_MAX)}>
         <input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputStartDraft = value))} />
         <input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputEndDraft = value))} />
        </div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <div class="axis-dual-range">
+        <div class="axis-dual-range" style={axisRangeStyle(pitchPosOutputStartDraft, pitchPosOutputEndDraft, AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)}>
         <input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchPosOutputStartDraft = value))} />
         <input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchPosOutputEndDraft = value))} />
        </div>
@@ -1298,10 +1312,10 @@
       </div>
       <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputEndDraft = value))} /></div>
+        <div class="axis-dual-range" style={axisRangeStyle(yawNegInputStartDraft, yawNegInputEndDraft, AXIS_INPUT_RANGE_MIN, AXIS_INPUT_RANGE_MAX)}><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputEndDraft = value))} /></div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputEndDraft = value))} /></div>
+        <div class="axis-dual-range" style={axisRangeStyle(yawNegOutputStartDraft, yawNegOutputEndDraft, AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)}><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputEndDraft = value))} /></div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputEndDraft = value))} /></div>
       </div>
       <p class="axis-caption">Input {formatRange(snapshot.yawNegInputDeadzone, snapshot.yawNegInputRangeEnd)} → Output {formatRange(snapshot.yawNegOutputRangeStart, snapshot.yawNegOutputMultiplier, 1)}</p>
@@ -1314,10 +1328,10 @@
       </div>
       <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputEndDraft = value))} /></div>
+        <div class="axis-dual-range" style={axisRangeStyle(yawPosInputStartDraft, yawPosInputEndDraft, AXIS_INPUT_RANGE_MIN, AXIS_INPUT_RANGE_MAX)}><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputEndDraft = value))} /></div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputEndDraft = value))} /></div>
+        <div class="axis-dual-range" style={axisRangeStyle(yawPosOutputStartDraft, yawPosOutputEndDraft, AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)}><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputEndDraft = value))} /></div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputEndDraft = value))} /></div>
       </div>
       <p class="axis-caption">Input {formatRange(snapshot.yawPosInputDeadzone, snapshot.yawPosInputRangeEnd)} → Output {formatRange(snapshot.yawPosOutputRangeStart, snapshot.yawPosOutputMultiplier, 1)}</p>
@@ -1330,10 +1344,10 @@
       </div>
       <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputEndDraft = value))} /></div>
+        <div class="axis-dual-range" style={axisRangeStyle(pitchNegInputStartDraft, pitchNegInputEndDraft, AXIS_INPUT_RANGE_MIN, AXIS_INPUT_RANGE_MAX)}><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputEndDraft = value))} /></div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputEndDraft = value))} /></div>
+        <div class="axis-dual-range" style={axisRangeStyle(pitchNegOutputStartDraft, pitchNegOutputEndDraft, AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)}><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputEndDraft = value))} /></div>
        <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputEndDraft = value))} /></div>
       </div>
       <p class="axis-caption">Input {formatRange(snapshot.pitchNegInputDeadzone, snapshot.pitchNegInputRangeEnd)} → Output {formatRange(snapshot.pitchNegOutputRangeStart, snapshot.pitchNegOutputMultiplier, 1)}</p>
