@@ -37,8 +37,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(8);
 const IDLE_TIMEOUT: Duration = Duration::from_millis(250);
 const INPUT_LIVE_TIMEOUT: Duration = Duration::from_secs(1);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
-const AXIS_MULTIPLIER_MIN: f32 = 0.1;
-const AXIS_MULTIPLIER_MAX: f32 = 9.9;
+const AXIS_OUTPUT_RANGE_MIN: f32 = 0.0;
+const AXIS_OUTPUT_RANGE_MAX: f32 = 1.0;
 const AXIS_INPUT_DEADZONE_MIN: f32 = 0.0;
 const AXIS_INPUT_DEADZONE_MAX: f32 = 1.0;
 const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
@@ -266,7 +266,7 @@ impl RuntimeSnapshot {
     config
      .mapping
      .yaw_pos_output_multiplier
-     .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
@@ -274,7 +274,7 @@ impl RuntimeSnapshot {
     config
      .mapping
      .yaw_neg_output_multiplier
-     .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
@@ -282,7 +282,7 @@ impl RuntimeSnapshot {
     config
      .mapping
      .pitch_pos_output_multiplier
-     .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
@@ -290,7 +290,7 @@ impl RuntimeSnapshot {
     config
      .mapping
      .pitch_neg_output_multiplier
-     .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
@@ -359,22 +359,34 @@ impl RuntimeSnapshot {
     1.0
    },
    yaw_pos_output_range_start: if restore {
-    config.mapping.yaw_pos_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .yaw_pos_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     0.0
    },
    yaw_neg_output_range_start: if restore {
-    config.mapping.yaw_neg_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .yaw_neg_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     0.0
    },
    pitch_pos_output_range_start: if restore {
-    config.mapping.pitch_pos_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .pitch_pos_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     0.0
    },
    pitch_neg_output_range_start: if restore {
-    config.mapping.pitch_neg_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .pitch_neg_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     0.0
    },
@@ -1030,16 +1042,16 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   let mut active_mapping = config.effective_mapping();
   active_mapping.yaw_pos_output_multiplier = active_mapping
    .yaw_pos_output_multiplier
-   .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
   active_mapping.yaw_neg_output_multiplier = active_mapping
    .yaw_neg_output_multiplier
-   .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
   active_mapping.pitch_pos_output_multiplier = active_mapping
    .pitch_pos_output_multiplier
-   .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
   active_mapping.pitch_neg_output_multiplier = active_mapping
    .pitch_neg_output_multiplier
-   .clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
   active_mapping.yaw_pos_input_deadzone = active_mapping
    .yaw_pos_input_deadzone
    .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
@@ -1064,10 +1076,18 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   active_mapping.pitch_neg_input_range_end = active_mapping
    .pitch_neg_input_range_end
    .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
-  active_mapping.yaw_pos_output_range_start = active_mapping.yaw_pos_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
-  active_mapping.yaw_neg_output_range_start = active_mapping.yaw_neg_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
-  active_mapping.pitch_pos_output_range_start = active_mapping.pitch_pos_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
-  active_mapping.pitch_neg_output_range_start = active_mapping.pitch_neg_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
+  active_mapping.yaw_pos_output_range_start = active_mapping
+   .yaw_pos_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.yaw_neg_output_range_start = active_mapping
+   .yaw_neg_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.pitch_pos_output_range_start = active_mapping
+   .pitch_pos_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.pitch_neg_output_range_start = active_mapping
+   .pitch_neg_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
   active_mapping.ets2_relative_angular_velocity_deg_per_sec = active_mapping
    .ets2_relative_angular_velocity_deg_per_sec
    .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
@@ -1666,10 +1686,10 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   mode: output_send_filter_mode,
   process_names: output_send_filter_process_names,
  };
- config.mapping.yaw_pos_output_multiplier = yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.yaw_neg_output_multiplier = yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_pos_output_multiplier = pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_neg_output_multiplier = pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ config.mapping.yaw_pos_output_multiplier = yaw_pos_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.yaw_neg_output_multiplier = yaw_neg_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_pos_output_multiplier = pitch_pos_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_neg_output_multiplier = pitch_neg_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
  config.mapping.yaw_pos_input_deadzone = yaw_pos_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
  config.mapping.yaw_neg_input_deadzone = yaw_neg_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
  config.mapping.pitch_pos_input_deadzone = pitch_pos_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
@@ -1678,10 +1698,10 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
  config.mapping.yaw_neg_input_range_end = yaw_neg_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
  config.mapping.pitch_pos_input_range_end = pitch_pos_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
  config.mapping.pitch_neg_input_range_end = pitch_neg_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
- config.mapping.yaw_pos_output_range_start = yaw_pos_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
- config.mapping.yaw_neg_output_range_start = yaw_neg_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_pos_output_range_start = pitch_pos_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_neg_output_range_start = pitch_neg_output_range_start.clamp(0.0, AXIS_MULTIPLIER_MAX);
+ config.mapping.yaw_pos_output_range_start = yaw_pos_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.yaw_neg_output_range_start = yaw_neg_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_pos_output_range_start = pitch_pos_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_neg_output_range_start = pitch_neg_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
  config.mapping.ets2_relative_angular_velocity_deg_per_sec =
   ets2_relative_angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
  config.mapping.invert_output_yaw = invert_output_yaw;
@@ -1795,8 +1815,8 @@ fn sanitize_input_range(start: f32, end: f32) -> (f32, f32) {
 }
 
 fn sanitize_output_range(start: f32, end: f32) -> (f32, f32) {
- let start = start.clamp(0.0, AXIS_MULTIPLIER_MAX);
- let end = end.clamp(0.0, AXIS_MULTIPLIER_MAX);
+ let start = start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ let end = end.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
  if start <= end {
   (start, end)
  } else {

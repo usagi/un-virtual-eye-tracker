@@ -361,7 +361,9 @@ textarea {
 .axis-card.axis-active {
  border-color: #16c4bbaa;
  box-shadow: 0 0 8px 1px #16c4bb44;
- transition: border-color 0.18s, box-shadow 0.18s;
+ transition:
+  border-color 0.18s,
+  box-shadow 0.18s;
 }
 
 .axis-card.axis-inactive {
@@ -440,9 +442,9 @@ textarea {
  grid-area: 1 / 1;
  width: calc(100% - 18px);
  min-width: 0;
+ height: 20px;
  justify-self: center;
  pointer-events: none;
- height: 20px;
  appearance: none;
  -webkit-appearance: none;
  background: transparent;
@@ -471,9 +473,9 @@ textarea {
 .axis-dual-range .axis-slider::-webkit-slider-thumb {
  width: 18px;
  height: 18px;
+ margin-top: -6px;
  border: 0;
  border-radius: 50%;
- margin-top: -6px;
  background: var(--accent-strong);
  -webkit-appearance: none;
  box-shadow: 0 0 0 1px rgba(210, 252, 255, 0.16);

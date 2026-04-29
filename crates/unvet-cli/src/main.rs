@@ -196,8 +196,8 @@ fn project_axis_magnitude(value: f32, input_start: f32, input_end: f32, output_s
   return 0.0;
  }
 
- let output_start = output_start.clamp(0.0, 9.9);
- let output_end = output_end.clamp(0.0, 9.9);
+ let output_start = output_start.clamp(0.0, 1.0);
+ let output_end = output_end.clamp(0.0, 1.0);
  let (output_start, output_end) = if output_start <= output_end {
   (output_start, output_end)
  } else {

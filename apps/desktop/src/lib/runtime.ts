@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type InputSource = "ifacialmocap_udp" | "ifacialmocap_tcp" | "vmc_osc";
-export type OutputBackendKind = "ets2" | "ets2_relative" | "mouse" | "keyboard" | "touch";
+export type OutputBackendKind =
+  | "ets2"
+  | "ets2_relative"
+  | "mouse"
+  | "keyboard"
+  | "touch";
 export type OutputSendFilterMode = "unrestricted" | "foreground_process";
 export type VmcOscPassthroughMode = "raw_udp_forward";
 export type ClutchHotkeyMode = "toggle" | "press_on_release_off";
