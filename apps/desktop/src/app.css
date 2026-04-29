@@ -387,6 +387,39 @@ textarea {
  align-items: center;
 }
 
+.axis-range-control {
+ display: grid;
+ grid-template-columns: 46px minmax(0, 1fr) 132px;
+ gap: 8px;
+ align-items: center;
+}
+
+.axis-dual-range {
+ position: relative;
+ height: 20px;
+ display: grid;
+ align-items: center;
+}
+
+.axis-dual-range .axis-slider {
+ grid-area: 1 / 1;
+ pointer-events: none;
+}
+
+.axis-dual-range .axis-slider::-webkit-slider-thumb {
+ pointer-events: auto;
+}
+
+.axis-dual-range .axis-slider::-moz-range-thumb {
+ pointer-events: auto;
+}
+
+.axis-number-pair {
+ display: grid;
+ grid-template-columns: 1fr 1fr;
+ gap: 6px;
+}
+
 .axis-field-label {
  color: var(--ink-soft);
  font-size: 11px;

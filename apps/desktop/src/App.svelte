@@ -10,8 +10,7 @@
   setVmcOscPassthroughMode,
   setVmcOscPassthroughTargets,
   setOutputBackend,
-  setOutputAxisInputDeadzones,
-  setOutputAxisMultipliers,
+  setOutputAxisRanges,
   setOutputAxisInversion,
   setEts2RelativeAngularVelocity,
   setOutputClutch,
@@ -84,6 +83,14 @@
   yawNegInputDeadzone: 0,
   pitchPosInputDeadzone: 0,
   pitchNegInputDeadzone: 0,
+  yawPosInputRangeEnd: 1,
+  yawNegInputRangeEnd: 1,
+  pitchPosInputRangeEnd: 1,
+  pitchNegInputRangeEnd: 1,
+  yawPosOutputRangeStart: 0,
+  yawNegOutputRangeStart: 0,
+  pitchPosOutputRangeStart: 0,
+  pitchNegOutputRangeStart: 0,
   ets2RelativeAngularVelocityDegPerSec: 120,
   invertOutputYaw: false,
   invertOutputPitch: false,
@@ -120,14 +127,14 @@
  }
 
  const MAX_LOG_ENTRIES = 400
-const AXIS_MULTIPLIER_MIN = 0.1
-const AXIS_MULTIPLIER_MAX = 9.0
- const AXIS_INPUT_DEADZONE_MIN = 0.0
- const AXIS_INPUT_DEADZONE_MAX = 0.95
+ const AXIS_OUTPUT_RANGE_MIN = 0.0
+ const AXIS_OUTPUT_RANGE_MAX = 9.9
+ const AXIS_INPUT_RANGE_MIN = 0.0
+ const AXIS_INPUT_RANGE_MAX = 1.0
  const VMC_OSC_PORT_MIN = 1
  const VMC_OSC_PORT_MAX = 65535
- const AXIS_MULTIPLIER_STEP = 0.05
- const AXIS_INPUT_DEADZONE_STEP = 0.01
+ const AXIS_OUTPUT_RANGE_STEP = 0.1
+ const AXIS_INPUT_RANGE_STEP = 0.01
  const AXIS_APPLY_DEBOUNCE_MS = 100
  const AXIS_SYNC_GRACE_MS = 450
  const OUTPUT_EASING_ALPHA_MIN = 0.01
@@ -162,14 +169,22 @@ const AXIS_MULTIPLIER_MAX = 9.0
  let vmcOscPassthroughTargetsDraft = ''
  let vmcOscPassthroughTargetsDirty = false
 
- let yawPosMultiplierDraft = 1
- let yawNegMultiplierDraft = 1
- let pitchPosMultiplierDraft = 1
- let pitchNegMultiplierDraft = 1
- let yawPosInputDeadzoneDraft = 0
- let yawNegInputDeadzoneDraft = 0
- let pitchPosInputDeadzoneDraft = 0
- let pitchNegInputDeadzoneDraft = 0
+ let yawPosInputStartDraft = 0
+ let yawPosInputEndDraft = 1
+ let yawPosOutputStartDraft = 0
+ let yawPosOutputEndDraft = 1
+ let yawNegInputStartDraft = 0
+ let yawNegInputEndDraft = 1
+ let yawNegOutputStartDraft = 0
+ let yawNegOutputEndDraft = 1
+ let pitchPosInputStartDraft = 0
+ let pitchPosInputEndDraft = 1
+ let pitchPosOutputStartDraft = 0
+ let pitchPosOutputEndDraft = 1
+ let pitchNegInputStartDraft = 0
+ let pitchNegInputEndDraft = 1
+ let pitchNegOutputStartDraft = 0
+ let pitchNegOutputEndDraft = 1
  let axisLastEditAt = 0
  let axisApplyTimer: number | undefined
 
@@ -295,20 +310,32 @@ const AXIS_MULTIPLIER_MAX = 9.0
   return !shortcut.ctrl && !shortcut.alt && !shortcut.meta
  }
 
- function clampAxisMultiplier(value: number): number {
-  return Math.min(AXIS_MULTIPLIER_MAX, Math.max(AXIS_MULTIPLIER_MIN, value))
+ function clampAxisInputRange(value: number): number {
+  return Math.min(AXIS_INPUT_RANGE_MAX, Math.max(AXIS_INPUT_RANGE_MIN, value))
  }
 
- function clampAxisInputDeadzone(value: number): number {
-  return Math.min(AXIS_INPUT_DEADZONE_MAX, Math.max(AXIS_INPUT_DEADZONE_MIN, value))
+ function clampAxisOutputRange(value: number): number {
+  return Math.min(AXIS_OUTPUT_RANGE_MAX, Math.max(AXIS_OUTPUT_RANGE_MIN, value))
+ }
+
+ function orderedRange(start: number, end: number): [number, number] {
+  return start <= end ? [start, end] : [end, start]
  }
 
  function clampEts2RelativeAngularVelocity(value: number): number {
   return Math.min(ETS2_RELATIVE_ANGULAR_VELOCITY_MAX, Math.max(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, value))
  }
 
- const axisIsActive = (value: number, deadzone: number, direction: 'positive' | 'negative') =>
-  direction === 'positive' ? value > deadzone : value < -deadzone
+ const axisIsActive = (value: number, start: number, end: number, direction: 'positive' | 'negative') => {
+  const [rangeStart, rangeEnd] = orderedRange(start, end)
+  const magnitude = direction === 'positive' ? value : -value
+  return magnitude >= rangeStart && magnitude <= rangeEnd && magnitude > 0
+ }
+
+ const formatRange = (start: number, end: number, digits = 2) => {
+  const [rangeStart, rangeEnd] = orderedRange(start, end)
+  return `[${rangeStart.toFixed(digits)}..${rangeEnd.toFixed(digits)}]`
+ }
 
  function clampVmcOscPort(value: number): number {
   const rounded = Math.round(value)
@@ -521,14 +548,22 @@ const AXIS_MULTIPLIER_MAX = 9.0
   }
 
    if (Date.now() - axisLastEditAt > AXIS_SYNC_GRACE_MS) {
-    yawPosMultiplierDraft = latest.yawPosOutputMultiplier
-    yawNegMultiplierDraft = latest.yawNegOutputMultiplier
-    pitchPosMultiplierDraft = latest.pitchPosOutputMultiplier
-    pitchNegMultiplierDraft = latest.pitchNegOutputMultiplier
-      yawPosInputDeadzoneDraft = latest.yawPosInputDeadzone
-      yawNegInputDeadzoneDraft = latest.yawNegInputDeadzone
-      pitchPosInputDeadzoneDraft = latest.pitchPosInputDeadzone
-      pitchNegInputDeadzoneDraft = latest.pitchNegInputDeadzone
+    yawPosInputStartDraft = latest.yawPosInputDeadzone
+    yawPosInputEndDraft = latest.yawPosInputRangeEnd
+    yawPosOutputStartDraft = latest.yawPosOutputRangeStart
+    yawPosOutputEndDraft = latest.yawPosOutputMultiplier
+    yawNegInputStartDraft = latest.yawNegInputDeadzone
+    yawNegInputEndDraft = latest.yawNegInputRangeEnd
+    yawNegOutputStartDraft = latest.yawNegOutputRangeStart
+    yawNegOutputEndDraft = latest.yawNegOutputMultiplier
+    pitchPosInputStartDraft = latest.pitchPosInputDeadzone
+    pitchPosInputEndDraft = latest.pitchPosInputRangeEnd
+    pitchPosOutputStartDraft = latest.pitchPosOutputRangeStart
+    pitchPosOutputEndDraft = latest.pitchPosOutputMultiplier
+    pitchNegInputStartDraft = latest.pitchNegInputDeadzone
+    pitchNegInputEndDraft = latest.pitchNegInputRangeEnd
+    pitchNegOutputStartDraft = latest.pitchNegOutputRangeStart
+    pitchNegOutputEndDraft = latest.pitchNegOutputMultiplier
    }
 
     if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
@@ -609,34 +644,48 @@ const AXIS_MULTIPLIER_MAX = 9.0
   }
  }
 
- async function applyAxisMultipliersLive() {
-  const yawPos = clampAxisMultiplier(yawPosMultiplierDraft)
-  const yawNeg = clampAxisMultiplier(yawNegMultiplierDraft)
-  const pitchPos = clampAxisMultiplier(pitchPosMultiplierDraft)
-  const pitchNeg = clampAxisMultiplier(pitchNegMultiplierDraft)
-
-  yawPosMultiplierDraft = yawPos
-  yawNegMultiplierDraft = yawNeg
-  pitchPosMultiplierDraft = pitchPos
-  pitchNegMultiplierDraft = pitchNeg
-  yawPosInputDeadzoneDraft = clampAxisInputDeadzone(yawPosInputDeadzoneDraft)
-  yawNegInputDeadzoneDraft = clampAxisInputDeadzone(yawNegInputDeadzoneDraft)
-  pitchPosInputDeadzoneDraft = clampAxisInputDeadzone(pitchPosInputDeadzoneDraft)
-  pitchNegInputDeadzoneDraft = clampAxisInputDeadzone(pitchNegInputDeadzoneDraft)
+ async function applyAxisRangesLive() {
+  yawPosInputStartDraft = clampAxisInputRange(yawPosInputStartDraft)
+  yawPosInputEndDraft = clampAxisInputRange(yawPosInputEndDraft)
+  yawPosOutputStartDraft = clampAxisOutputRange(yawPosOutputStartDraft)
+  yawPosOutputEndDraft = clampAxisOutputRange(yawPosOutputEndDraft)
+  yawNegInputStartDraft = clampAxisInputRange(yawNegInputStartDraft)
+  yawNegInputEndDraft = clampAxisInputRange(yawNegInputEndDraft)
+  yawNegOutputStartDraft = clampAxisOutputRange(yawNegOutputStartDraft)
+  yawNegOutputEndDraft = clampAxisOutputRange(yawNegOutputEndDraft)
+  pitchPosInputStartDraft = clampAxisInputRange(pitchPosInputStartDraft)
+  pitchPosInputEndDraft = clampAxisInputRange(pitchPosInputEndDraft)
+  pitchPosOutputStartDraft = clampAxisOutputRange(pitchPosOutputStartDraft)
+  pitchPosOutputEndDraft = clampAxisOutputRange(pitchPosOutputEndDraft)
+  pitchNegInputStartDraft = clampAxisInputRange(pitchNegInputStartDraft)
+  pitchNegInputEndDraft = clampAxisInputRange(pitchNegInputEndDraft)
+  pitchNegOutputStartDraft = clampAxisOutputRange(pitchNegOutputStartDraft)
+  pitchNegOutputEndDraft = clampAxisOutputRange(pitchNegOutputEndDraft)
 
   try {
    actionError = ''
-   await setOutputAxisMultipliers(yawPos, yawNeg, pitchPos, pitchNeg)
-   await setOutputAxisInputDeadzones(
-    yawPosInputDeadzoneDraft,
-    yawNegInputDeadzoneDraft,
-    pitchPosInputDeadzoneDraft,
-    pitchNegInputDeadzoneDraft,
-   )
+   await setOutputAxisRanges({
+    yawPosInputStart: yawPosInputStartDraft,
+    yawPosInputEnd: yawPosInputEndDraft,
+    yawPosOutputStart: yawPosOutputStartDraft,
+    yawPosOutputEnd: yawPosOutputEndDraft,
+    yawNegInputStart: yawNegInputStartDraft,
+    yawNegInputEnd: yawNegInputEndDraft,
+    yawNegOutputStart: yawNegOutputStartDraft,
+    yawNegOutputEnd: yawNegOutputEndDraft,
+    pitchPosInputStart: pitchPosInputStartDraft,
+    pitchPosInputEnd: pitchPosInputEndDraft,
+    pitchPosOutputStart: pitchPosOutputStartDraft,
+    pitchPosOutputEnd: pitchPosOutputEndDraft,
+    pitchNegInputStart: pitchNegInputStartDraft,
+    pitchNegInputEnd: pitchNegInputEndDraft,
+    pitchNegOutputStart: pitchNegOutputStartDraft,
+    pitchNegOutputEnd: pitchNegOutputEndDraft,
+   })
   } catch (error) {
    const message = String(error)
    actionError = message
-   pushLog('error', 'ui', `Set axis multipliers failed: ${message}`)
+   pushLog('error', 'ui', `Set axis ranges failed: ${message}`)
   }
  }
 
@@ -649,7 +698,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
 
   axisApplyTimer = window.setTimeout(() => {
    axisApplyTimer = undefined
-   void applyAxisMultipliersLive()
+  void applyAxisRangesLive()
   }, AXIS_APPLY_DEBOUNCE_MS)
  }
 
@@ -734,83 +783,23 @@ const AXIS_MULTIPLIER_MAX = 9.0
   queueOutputEasingApply()
  }
 
- function onYawPosMultiplierInput(event: Event) {
+ function onAxisInputRangeInput(event: Event, assign: (value: number) => void) {
   const parsed = Number((event.currentTarget as HTMLInputElement).value)
   if (!Number.isFinite(parsed)) {
    return
   }
 
-  yawPosMultiplierDraft = clampAxisMultiplier(parsed)
+  assign(clampAxisInputRange(parsed))
   queueAxisMultiplierApply()
  }
 
- function onYawPosInputDeadzoneInput(event: Event) {
+ function onAxisOutputRangeInput(event: Event, assign: (value: number) => void) {
   const parsed = Number((event.currentTarget as HTMLInputElement).value)
   if (!Number.isFinite(parsed)) {
    return
   }
 
-  yawPosInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
-  queueAxisMultiplierApply()
- }
-
- function onYawNegMultiplierInput(event: Event) {
-  const parsed = Number((event.currentTarget as HTMLInputElement).value)
-  if (!Number.isFinite(parsed)) {
-   return
-  }
-
-  yawNegMultiplierDraft = clampAxisMultiplier(parsed)
-  queueAxisMultiplierApply()
- }
-
- function onYawNegInputDeadzoneInput(event: Event) {
-  const parsed = Number((event.currentTarget as HTMLInputElement).value)
-  if (!Number.isFinite(parsed)) {
-   return
-  }
-
-  yawNegInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
-  queueAxisMultiplierApply()
- }
-
- function onPitchPosMultiplierInput(event: Event) {
-  const parsed = Number((event.currentTarget as HTMLInputElement).value)
-  if (!Number.isFinite(parsed)) {
-   return
-  }
-
-  pitchPosMultiplierDraft = clampAxisMultiplier(parsed)
-  queueAxisMultiplierApply()
- }
-
- function onPitchPosInputDeadzoneInput(event: Event) {
-  const parsed = Number((event.currentTarget as HTMLInputElement).value)
-  if (!Number.isFinite(parsed)) {
-   return
-  }
-
-  pitchPosInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
-  queueAxisMultiplierApply()
- }
-
- function onPitchNegMultiplierInput(event: Event) {
-  const parsed = Number((event.currentTarget as HTMLInputElement).value)
-  if (!Number.isFinite(parsed)) {
-   return
-  }
-
-  pitchNegMultiplierDraft = clampAxisMultiplier(parsed)
-  queueAxisMultiplierApply()
- }
-
- function onPitchNegInputDeadzoneInput(event: Event) {
-  const parsed = Number((event.currentTarget as HTMLInputElement).value)
-  if (!Number.isFinite(parsed)) {
-   return
-  }
-
-  pitchNegInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
+  assign(clampAxisOutputRange(parsed))
   queueAxisMultiplierApply()
  }
 
@@ -1280,212 +1269,74 @@ const AXIS_MULTIPLIER_MAX = 9.0
     <h2>Axis Tuning (Instant Apply)</h2>
 
     <div class="axis-grid">
-     <article class={`axis-card pitch-pos ${axisIsActive(snapshot.lookPitchNormRaw, snapshot.pitchPosInputDeadzone, 'positive') ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card pitch-pos ${axisIsActive(snapshot.lookPitchNormRaw, snapshot.pitchPosInputDeadzone, snapshot.pitchPosInputRangeEnd, 'positive') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Pitch+ (Up)</span>
        <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
-      <div class="axis-editor">
+      <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <input
-        id="pitch-pos-input-deadzone-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={pitchPosInputDeadzoneDraft}
-        on:input={onPitchPosInputDeadzoneInput}
-       />
-       <input
-        id="pitch-pos-input-deadzone-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={pitchPosInputDeadzoneDraft}
-        on:input={onPitchPosInputDeadzoneInput}
-       />
+       <div class="axis-dual-range">
+        <input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputStartDraft = value))} />
+        <input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputEndDraft = value))} />
+       </div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchPosInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <input
-        id="pitch-pos-output-multiplier-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={pitchPosMultiplierDraft}
-        on:input={onPitchPosMultiplierInput}
-       />
-       <input
-        id="pitch-pos-output-multiplier-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={pitchPosMultiplierDraft}
-        on:input={onPitchPosMultiplierInput}
-       />
+       <div class="axis-dual-range">
+        <input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchPosOutputStartDraft = value))} />
+        <input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchPosOutputEndDraft = value))} />
+       </div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchPosOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchPosOutputEndDraft = value))} /></div>
       </div>
-      <p class="axis-caption">input &gt; {snapshot.pitchPosInputDeadzone.toFixed(2)} / output x{snapshot.pitchPosOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">Input {formatRange(snapshot.pitchPosInputDeadzone, snapshot.pitchPosInputRangeEnd)} → Output {formatRange(snapshot.pitchPosOutputRangeStart, snapshot.pitchPosOutputMultiplier, 1)}</p>
      </article>
 
-     <article class={`axis-card yaw-neg ${axisIsActive(snapshot.lookYawNormRaw, snapshot.yawNegInputDeadzone, 'negative') ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card yaw-neg ${axisIsActive(snapshot.lookYawNormRaw, snapshot.yawNegInputDeadzone, snapshot.yawNegInputRangeEnd, 'negative') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Yaw- (Left)</span>
        <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
-      <div class="axis-editor">
+      <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <input
-        id="yaw-neg-input-deadzone-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={yawNegInputDeadzoneDraft}
-        on:input={onYawNegInputDeadzoneInput}
-       />
-       <input
-        id="yaw-neg-input-deadzone-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={yawNegInputDeadzoneDraft}
-        on:input={onYawNegInputDeadzoneInput}
-       />
+       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputEndDraft = value))} /></div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawNegInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <input
-        id="yaw-neg-output-multiplier-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={yawNegMultiplierDraft}
-        on:input={onYawNegMultiplierInput}
-       />
-       <input
-        id="yaw-neg-output-multiplier-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={yawNegMultiplierDraft}
-        on:input={onYawNegMultiplierInput}
-       />
+       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputEndDraft = value))} /></div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawNegOutputEndDraft = value))} /></div>
       </div>
-      <p class="axis-caption">input &lt; -{snapshot.yawNegInputDeadzone.toFixed(2)} / output x{snapshot.yawNegOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">Input {formatRange(snapshot.yawNegInputDeadzone, snapshot.yawNegInputRangeEnd)} → Output {formatRange(snapshot.yawNegOutputRangeStart, snapshot.yawNegOutputMultiplier, 1)}</p>
      </article>
 
-     <article class={`axis-card yaw-pos ${axisIsActive(snapshot.lookYawNormRaw, snapshot.yawPosInputDeadzone, 'positive') ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card yaw-pos ${axisIsActive(snapshot.lookYawNormRaw, snapshot.yawPosInputDeadzone, snapshot.yawPosInputRangeEnd, 'positive') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Yaw+ (Right)</span>
        <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
-      <div class="axis-editor">
+      <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <input
-        id="yaw-pos-input-deadzone-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={yawPosInputDeadzoneDraft}
-        on:input={onYawPosInputDeadzoneInput}
-       />
-       <input
-        id="yaw-pos-input-deadzone-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={yawPosInputDeadzoneDraft}
-        on:input={onYawPosInputDeadzoneInput}
-       />
+       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputEndDraft = value))} /></div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={yawPosInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (yawPosInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <input
-        id="yaw-pos-output-multiplier-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={yawPosMultiplierDraft}
-        on:input={onYawPosMultiplierInput}
-       />
-       <input
-        id="yaw-pos-output-multiplier-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={yawPosMultiplierDraft}
-        on:input={onYawPosMultiplierInput}
-       />
+       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputEndDraft = value))} /></div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={yawPosOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (yawPosOutputEndDraft = value))} /></div>
       </div>
-      <p class="axis-caption">input &gt; {snapshot.yawPosInputDeadzone.toFixed(2)} / output x{snapshot.yawPosOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">Input {formatRange(snapshot.yawPosInputDeadzone, snapshot.yawPosInputRangeEnd)} → Output {formatRange(snapshot.yawPosOutputRangeStart, snapshot.yawPosOutputMultiplier, 1)}</p>
      </article>
 
-     <article class={`axis-card pitch-neg ${axisIsActive(snapshot.lookPitchNormRaw, snapshot.pitchNegInputDeadzone, 'negative') ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card pitch-neg ${axisIsActive(snapshot.lookPitchNormRaw, snapshot.pitchNegInputDeadzone, snapshot.pitchNegInputRangeEnd, 'negative') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Pitch- (Down)</span>
        <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
-      <div class="axis-editor">
+      <div class="axis-range-control">
        <span class="axis-field-label">Input</span>
-       <input
-        id="pitch-neg-input-deadzone-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={pitchNegInputDeadzoneDraft}
-        on:input={onPitchNegInputDeadzoneInput}
-       />
-       <input
-        id="pitch-neg-input-deadzone-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_INPUT_DEADZONE_MIN}
-        max={AXIS_INPUT_DEADZONE_MAX}
-        step={AXIS_INPUT_DEADZONE_STEP}
-        value={pitchNegInputDeadzoneDraft}
-        on:input={onPitchNegInputDeadzoneInput}
-       />
+       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputEndDraft = value))} /></div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputStartDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_INPUT_RANGE_MIN} max={AXIS_INPUT_RANGE_MAX} step={AXIS_INPUT_RANGE_STEP} value={pitchNegInputEndDraft} on:input={(event) => onAxisInputRangeInput(event, (value) => (pitchNegInputEndDraft = value))} /></div>
        <span class="axis-field-label">Output</span>
-       <input
-        id="pitch-neg-output-multiplier-range"
-        class="axis-slider"
-        type="range"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={pitchNegMultiplierDraft}
-        on:input={onPitchNegMultiplierInput}
-       />
-       <input
-        id="pitch-neg-output-multiplier-number"
-        class="axis-number"
-        type="number"
-        min={AXIS_MULTIPLIER_MIN}
-        max={AXIS_MULTIPLIER_MAX}
-        step={AXIS_MULTIPLIER_STEP}
-        value={pitchNegMultiplierDraft}
-        on:input={onPitchNegMultiplierInput}
-       />
+       <div class="axis-dual-range"><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputStartDraft = value))} /><input class="axis-slider" type="range" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputEndDraft = value))} /></div>
+       <div class="axis-number-pair"><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputStartDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputStartDraft = value))} /><input class="axis-number" type="number" min={AXIS_OUTPUT_RANGE_MIN} max={AXIS_OUTPUT_RANGE_MAX} step={AXIS_OUTPUT_RANGE_STEP} value={pitchNegOutputEndDraft} on:input={(event) => onAxisOutputRangeInput(event, (value) => (pitchNegOutputEndDraft = value))} /></div>
       </div>
-      <p class="axis-caption">input &lt; -{snapshot.pitchNegInputDeadzone.toFixed(2)} / output x{snapshot.pitchNegOutputMultiplier.toFixed(2)}</p>
+      <p class="axis-caption">Input {formatRange(snapshot.pitchNegInputDeadzone, snapshot.pitchNegInputRangeEnd)} → Output {formatRange(snapshot.pitchNegOutputRangeStart, snapshot.pitchNegOutputMultiplier, 1)}</p>
      </article>
     </div>
 

@@ -32,6 +32,14 @@ export type RuntimeSnapshot = {
   yawNegInputDeadzone: number;
   pitchPosInputDeadzone: number;
   pitchNegInputDeadzone: number;
+  yawPosInputRangeEnd: number;
+  yawNegInputRangeEnd: number;
+  pitchPosInputRangeEnd: number;
+  pitchNegInputRangeEnd: number;
+  yawPosOutputRangeStart: number;
+  yawNegOutputRangeStart: number;
+  pitchPosOutputRangeStart: number;
+  pitchNegOutputRangeStart: number;
   ets2RelativeAngularVelocityDegPerSec: number;
   invertOutputYaw: boolean;
   invertOutputPitch: boolean;
@@ -69,31 +77,27 @@ export const setOutputClutchHotkeyMode = (mode: ClutchHotkeyMode) =>
 export const setPersistSessionSettings = (enabled: boolean) =>
   invokeRuntime<void>("set_persist_session_settings", { enabled });
 
-export const setOutputAxisMultipliers = (
-  yawPosOutputMultiplier: number,
-  yawNegOutputMultiplier: number,
-  pitchPosOutputMultiplier: number,
-  pitchNegOutputMultiplier: number,
-) =>
-  invokeRuntime<void>("set_output_axis_multipliers", {
-    yawPosOutputMultiplier,
-    yawNegOutputMultiplier,
-    pitchPosOutputMultiplier,
-    pitchNegOutputMultiplier,
-  });
+export type AxisRangePayload = {
+  yawPosInputStart: number;
+  yawPosInputEnd: number;
+  yawPosOutputStart: number;
+  yawPosOutputEnd: number;
+  yawNegInputStart: number;
+  yawNegInputEnd: number;
+  yawNegOutputStart: number;
+  yawNegOutputEnd: number;
+  pitchPosInputStart: number;
+  pitchPosInputEnd: number;
+  pitchPosOutputStart: number;
+  pitchPosOutputEnd: number;
+  pitchNegInputStart: number;
+  pitchNegInputEnd: number;
+  pitchNegOutputStart: number;
+  pitchNegOutputEnd: number;
+};
 
-export const setOutputAxisInputDeadzones = (
-  yawPosInputDeadzone: number,
-  yawNegInputDeadzone: number,
-  pitchPosInputDeadzone: number,
-  pitchNegInputDeadzone: number,
-) =>
-  invokeRuntime<void>("set_output_axis_input_deadzones", {
-    yawPosInputDeadzone,
-    yawNegInputDeadzone,
-    pitchPosInputDeadzone,
-    pitchNegInputDeadzone,
-  });
+export const setOutputAxisRanges = (ranges: AxisRangePayload) =>
+  invokeRuntime<void>("set_output_axis_ranges", ranges);
 
 export const setEts2RelativeAngularVelocity = (
   angularVelocityDegPerSec: number,

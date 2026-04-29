@@ -134,20 +134,28 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
  let pitch_raw = map_angle_to_normalized(mixed_pitch * pitch_invert, pitch_settings);
 
  OutputFrame {
-    look_yaw_norm: map_directional_axis(
-     yaw_raw,
-     mapping.yaw_pos_input_deadzone,
-     mapping.yaw_neg_input_deadzone,
-     mapping.yaw_pos_output_multiplier,
-     mapping.yaw_neg_output_multiplier,
-    ),
-    look_pitch_norm: map_directional_axis(
-     pitch_raw,
-     mapping.pitch_pos_input_deadzone,
-     mapping.pitch_neg_input_deadzone,
-     mapping.pitch_pos_output_multiplier,
-     mapping.pitch_neg_output_multiplier,
-    ),
+  look_yaw_norm: map_directional_axis(
+   yaw_raw,
+   mapping.yaw_pos_input_deadzone,
+   mapping.yaw_pos_input_range_end,
+   mapping.yaw_pos_output_range_start,
+   mapping.yaw_pos_output_multiplier,
+   mapping.yaw_neg_input_deadzone,
+   mapping.yaw_neg_input_range_end,
+   mapping.yaw_neg_output_range_start,
+   mapping.yaw_neg_output_multiplier,
+  ),
+  look_pitch_norm: map_directional_axis(
+   pitch_raw,
+   mapping.pitch_pos_input_deadzone,
+   mapping.pitch_pos_input_range_end,
+   mapping.pitch_pos_output_range_start,
+   mapping.pitch_pos_output_multiplier,
+   mapping.pitch_neg_input_deadzone,
+   mapping.pitch_neg_input_range_end,
+   mapping.pitch_neg_output_range_start,
+   mapping.pitch_neg_output_multiplier,
+  ),
   look_yaw_norm_raw: yaw_raw,
   look_pitch_norm_raw: pitch_raw,
   confidence: frame.confidence,
@@ -155,28 +163,48 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
  }
 }
 
-fn map_directional_axis(value: f32, pos_input_deadzone: f32, neg_input_deadzone: f32, pos_multiplier: f32, neg_multiplier: f32) -> f32 {
+fn map_directional_axis(
+ value: f32,
+ pos_input_start: f32,
+ pos_input_end: f32,
+ pos_output_start: f32,
+ pos_output_end: f32,
+ neg_input_start: f32,
+ neg_input_end: f32,
+ neg_output_start: f32,
+ neg_output_end: f32,
+) -> f32 {
  let value = value.clamp(-1.0, 1.0);
  if value > 0.0 {
-    let deadzone = pos_input_deadzone.clamp(0.0, 0.95);
-    if value <= deadzone {
-     return 0.0;
-    }
-
-    let remapped = ((value - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0);
-    (remapped * pos_multiplier.clamp(0.1, 9.0)).clamp(0.0, 1.0)
+  project_axis_magnitude(value, pos_input_start, pos_input_end, pos_output_start, pos_output_end)
  } else if value < 0.0 {
-    let deadzone = neg_input_deadzone.clamp(0.0, 0.95);
-    let magnitude = value.abs();
-    if magnitude <= deadzone {
-     return 0.0;
-    }
-
-    let remapped = ((magnitude - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0);
-    -(remapped * neg_multiplier.clamp(0.1, 9.0)).clamp(0.0, 1.0)
+  -project_axis_magnitude(value.abs(), neg_input_start, neg_input_end, neg_output_start, neg_output_end)
  } else {
-    0.0
+  0.0
  }
+}
+
+fn project_axis_magnitude(value: f32, input_start: f32, input_end: f32, output_start: f32, output_end: f32) -> f32 {
+ let input_start = input_start.clamp(0.0, 1.0);
+ let input_end = input_end.clamp(0.0, 1.0);
+ let (input_start, input_end) = if input_start <= input_end {
+  (input_start, input_end)
+ } else {
+  (input_end, input_start)
+ };
+ if value < input_start || value > input_end || (input_end - input_start).abs() <= f32::EPSILON {
+  return 0.0;
+ }
+
+ let output_start = output_start.clamp(0.0, 9.9);
+ let output_end = output_end.clamp(0.0, 9.9);
+ let (output_start, output_end) = if output_start <= output_end {
+  (output_start, output_end)
+ } else {
+  (output_end, output_start)
+ };
+ let t = ((value - input_start) / (input_end - input_start)).clamp(0.0, 1.0);
+ output_start + (output_end - output_start) * t
 }
 
 fn build_calibration(config: &AppConfig) -> NeutralPoseCalibration {
