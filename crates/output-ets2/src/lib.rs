@@ -163,6 +163,9 @@ struct FreeTrackPose {
 pub struct Ets2Backend {
  enabled: bool,
  response: TruckSimResponse,
+ apply_response: bool,
+ max_yaw_deg: f32,
+ max_pitch_deg: f32,
  last_command: TruckSimCommand,
  writer: Option<FreeTrackWriter>,
 }
@@ -172,6 +175,9 @@ impl Default for Ets2Backend {
   Self {
    enabled: true,
    response: TruckSimResponse::default(),
+   apply_response: true,
+   max_yaw_deg: FREETRACK_MAX_YAW_DEG,
+   max_pitch_deg: FREETRACK_MAX_PITCH_DEG,
    last_command: TruckSimCommand::neutral(),
    writer: None,
   }
@@ -179,6 +185,15 @@ impl Default for Ets2Backend {
 }
 
 impl Ets2Backend {
+ pub fn relative_headtracking() -> Self {
+  Self {
+   apply_response: false,
+   max_yaw_deg: 180.0,
+   max_pitch_deg: 180.0,
+   ..Self::default()
+  }
+ }
+
  pub fn set_response_preset(&mut self, preset: TruckSimPreset) {
   self.response = TruckSimResponse::for_preset(preset);
  }
@@ -200,30 +215,38 @@ impl Ets2Backend {
   (clamped.signum() * curved * gain).clamp(-1.0, 1.0)
  }
 
- fn frame_to_command(frame: OutputFrame, response: TruckSimResponse) -> TruckSimCommand {
+ fn frame_to_command(frame: OutputFrame, response: TruckSimResponse, apply_response: bool) -> TruckSimCommand {
   if !frame.active {
    return TruckSimCommand::neutral();
   }
 
-  let camera_yaw = Self::map_axis(frame.look_yaw_norm, response.yaw_gain, response.deadzone, response.yaw_exponent);
-  let camera_pitch = Self::map_axis(
-   frame.look_pitch_norm,
-   response.pitch_gain,
-   response.deadzone,
-   response.pitch_exponent,
-  );
+  let camera_yaw = if apply_response {
+   Self::map_axis(frame.look_yaw_norm, response.yaw_gain, response.deadzone, response.yaw_exponent)
+  } else {
+   frame.look_yaw_norm.clamp(-1.0, 1.0)
+  };
+  let camera_pitch = if apply_response {
+   Self::map_axis(
+    frame.look_pitch_norm,
+    response.pitch_gain,
+    response.deadzone,
+    response.pitch_exponent,
+   )
+  } else {
+   frame.look_pitch_norm.clamp(-1.0, 1.0)
+  };
 
   let response = response.sanitized();
   let threshold = response.look_back_threshold;
   TruckSimCommand {
    camera_yaw,
    camera_pitch,
-   look_back_left: camera_yaw <= -threshold,
-   look_back_right: camera_yaw >= threshold,
+   look_back_left: apply_response && camera_yaw <= -threshold,
+   look_back_right: apply_response && camera_yaw >= threshold,
   }
  }
 
- fn command_to_freetrack_pose(command: TruckSimCommand) -> FreeTrackPose {
+ fn command_to_freetrack_pose(&self, command: TruckSimCommand) -> FreeTrackPose {
   const DEG_TO_RAD: f32 = std::f32::consts::PI / 180.0;
 
   let yaw_norm = if command.look_back_left {
@@ -237,8 +260,8 @@ impl Ets2Backend {
   let pitch_norm = command.camera_pitch.clamp(-1.0, 1.0);
 
   // FreeTrack-compatible values follow the same sign convention used by opentrack.
-  let yaw = -yaw_norm * FREETRACK_MAX_YAW_DEG * DEG_TO_RAD;
-  let pitch = -pitch_norm * FREETRACK_MAX_PITCH_DEG * DEG_TO_RAD;
+  let yaw = -yaw_norm * self.max_yaw_deg * DEG_TO_RAD;
+  let pitch = -pitch_norm * self.max_pitch_deg * DEG_TO_RAD;
   let roll = 0.0;
 
   FreeTrackPose {
@@ -262,7 +285,7 @@ impl Ets2Backend {
    self.writer = Some(FreeTrackWriter::connect()?);
   }
 
-  let pose = Self::command_to_freetrack_pose(command);
+  let pose = self.command_to_freetrack_pose(command);
   if let Some(writer) = self.writer.as_mut() {
    if let Err(error) = writer.write_pose(pose) {
     self.writer = None;
@@ -287,7 +310,7 @@ impl OutputBackend for Ets2Backend {
    return Ok(());
   }
 
-  let command = Self::frame_to_command(frame, self.response);
+  let command = Self::frame_to_command(frame, self.response, self.apply_response);
   self.dispatch_command(command)?;
   self.last_command = command;
   Ok(())

@@ -8,13 +8,13 @@ use std::{
 use tracing::{info, warn};
 use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, VmcOscPassthroughMode};
 use unvet_core::{
+ AppResult,
  calibration::NeutralPoseCalibration,
  filter::{OutputFrameSmoother, TrackingFrameStabilizer},
  logging,
- mapping::{map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix, AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset},
+ mapping::{AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset, map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix},
  model::{OutputFrame, TrackingFrame},
  ports::InputReceiver,
- AppResult,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
 use unvet_input_vmc_osc::{
@@ -134,18 +134,48 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
  let pitch_raw = map_angle_to_normalized(mixed_pitch * pitch_invert, pitch_settings);
 
  OutputFrame {
-  look_yaw_norm: {
-   let yaw_multiplier = if yaw_raw >= 0.0 { mapping.yaw_pos_output_multiplier } else { mapping.yaw_neg_output_multiplier };
-   (yaw_raw * yaw_multiplier).clamp(-1.0, 1.0)
-  },
-  look_pitch_norm: {
-   let pitch_multiplier = if pitch_raw >= 0.0 { mapping.pitch_pos_output_multiplier } else { mapping.pitch_neg_output_multiplier };
-   (pitch_raw * pitch_multiplier).clamp(-1.0, 1.0)
-  },
+    look_yaw_norm: map_directional_axis(
+     yaw_raw,
+     mapping.yaw_pos_input_deadzone,
+     mapping.yaw_neg_input_deadzone,
+     mapping.yaw_pos_output_multiplier,
+     mapping.yaw_neg_output_multiplier,
+    ),
+    look_pitch_norm: map_directional_axis(
+     pitch_raw,
+     mapping.pitch_pos_input_deadzone,
+     mapping.pitch_neg_input_deadzone,
+     mapping.pitch_pos_output_multiplier,
+     mapping.pitch_neg_output_multiplier,
+    ),
   look_yaw_norm_raw: yaw_raw,
   look_pitch_norm_raw: pitch_raw,
   confidence: frame.confidence,
   active: frame.active,
+ }
+}
+
+fn map_directional_axis(value: f32, pos_input_deadzone: f32, neg_input_deadzone: f32, pos_multiplier: f32, neg_multiplier: f32) -> f32 {
+ let value = value.clamp(-1.0, 1.0);
+ if value > 0.0 {
+    let deadzone = pos_input_deadzone.clamp(0.0, 0.95);
+    if value <= deadzone {
+     return 0.0;
+    }
+
+    let remapped = ((value - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0);
+    (remapped * pos_multiplier.clamp(0.1, 9.0)).clamp(0.0, 1.0)
+ } else if value < 0.0 {
+    let deadzone = neg_input_deadzone.clamp(0.0, 0.95);
+    let magnitude = value.abs();
+    if magnitude <= deadzone {
+     return 0.0;
+    }
+
+    let remapped = ((magnitude - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0);
+    -(remapped * neg_multiplier.clamp(0.1, 9.0)).clamp(0.0, 1.0)
+ } else {
+    0.0
  }
 }
 

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type InputSource = "ifacialmocap_udp" | "ifacialmocap_tcp" | "vmc_osc";
-export type OutputBackendKind = "ets2" | "mouse" | "keyboard" | "touch";
+export type OutputBackendKind = "ets2" | "ets2_relative" | "mouse" | "keyboard" | "touch";
 export type OutputSendFilterMode = "unrestricted" | "foreground_process";
 export type VmcOscPassthroughMode = "raw_udp_forward";
 export type ClutchHotkeyMode = "toggle" | "press_on_release_off";
@@ -28,6 +28,11 @@ export type RuntimeSnapshot = {
   yawNegOutputMultiplier: number;
   pitchPosOutputMultiplier: number;
   pitchNegOutputMultiplier: number;
+  yawPosInputDeadzone: number;
+  yawNegInputDeadzone: number;
+  pitchPosInputDeadzone: number;
+  pitchNegInputDeadzone: number;
+  ets2RelativeAngularVelocityDegPerSec: number;
   invertOutputYaw: boolean;
   invertOutputPitch: boolean;
   spikeRejectionEnabled: boolean;
@@ -75,6 +80,26 @@ export const setOutputAxisMultipliers = (
     yawNegOutputMultiplier,
     pitchPosOutputMultiplier,
     pitchNegOutputMultiplier,
+  });
+
+export const setOutputAxisInputDeadzones = (
+  yawPosInputDeadzone: number,
+  yawNegInputDeadzone: number,
+  pitchPosInputDeadzone: number,
+  pitchNegInputDeadzone: number,
+) =>
+  invokeRuntime<void>("set_output_axis_input_deadzones", {
+    yawPosInputDeadzone,
+    yawNegInputDeadzone,
+    pitchPosInputDeadzone,
+    pitchNegInputDeadzone,
+  });
+
+export const setEts2RelativeAngularVelocity = (
+  angularVelocityDegPerSec: number,
+) =>
+  invokeRuntime<void>("set_ets2_relative_angular_velocity", {
+    angularVelocityDegPerSec,
   });
 
 export const setOutputAxisInversion = (

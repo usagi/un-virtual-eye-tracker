@@ -10,8 +10,10 @@
   setVmcOscPassthroughMode,
   setVmcOscPassthroughTargets,
   setOutputBackend,
+  setOutputAxisInputDeadzones,
   setOutputAxisMultipliers,
   setOutputAxisInversion,
+  setEts2RelativeAngularVelocity,
   setOutputClutch,
   setOutputClutchHotkey,
   setOutputClutchHotkeyMode,
@@ -35,9 +37,10 @@
  ]
 
  const OUTPUT_BACKENDS: Array<{ value: OutputBackendKind; label: string }> = [
-  { value: 'ets2', label: 'ETS2 / ATS' },
-  { value: 'mouse', label: 'Relative Pointer' },
-  { value: 'touch', label: 'Absolute Pointer' },
+  { value: 'ets2', label: 'ETS2 / ATS (Headtracking-Absolute)' },
+  { value: 'ets2_relative', label: 'ETS2 / ATS (Headtracking-Relative)' },
+  { value: 'mouse', label: 'Pointer (Relative)' },
+  { value: 'touch', label: 'Pointer (Absolute)' },
   { value: 'keyboard', label: 'Keyboard 4-way' },
  ]
 
@@ -77,6 +80,11 @@
   yawNegOutputMultiplier: 1,
   pitchPosOutputMultiplier: 1,
   pitchNegOutputMultiplier: 1,
+  yawPosInputDeadzone: 0,
+  yawNegInputDeadzone: 0,
+  pitchPosInputDeadzone: 0,
+  pitchNegInputDeadzone: 0,
+  ets2RelativeAngularVelocityDegPerSec: 120,
   invertOutputYaw: false,
   invertOutputPitch: false,
   spikeRejectionEnabled: false,
@@ -114,9 +122,12 @@
  const MAX_LOG_ENTRIES = 400
 const AXIS_MULTIPLIER_MIN = 0.1
 const AXIS_MULTIPLIER_MAX = 9.0
+ const AXIS_INPUT_DEADZONE_MIN = 0.0
+ const AXIS_INPUT_DEADZONE_MAX = 0.95
  const VMC_OSC_PORT_MIN = 1
  const VMC_OSC_PORT_MAX = 65535
  const AXIS_MULTIPLIER_STEP = 0.05
+ const AXIS_INPUT_DEADZONE_STEP = 0.01
  const AXIS_APPLY_DEBOUNCE_MS = 100
  const AXIS_SYNC_GRACE_MS = 450
  const OUTPUT_EASING_ALPHA_MIN = 0.01
@@ -124,6 +135,9 @@ const AXIS_MULTIPLIER_MAX = 9.0
  const OUTPUT_EASING_ALPHA_STEP = 0.01
  const OUTPUT_EASING_APPLY_DEBOUNCE_MS = 100
  const OUTPUT_EASING_SYNC_GRACE_MS = 450
+ const ETS2_RELATIVE_ANGULAR_VELOCITY_MIN = 1
+ const ETS2_RELATIVE_ANGULAR_VELOCITY_MAX = 720
+ const ETS2_RELATIVE_ANGULAR_VELOCITY_STEP = 1
 
  let snapshot: RuntimeSnapshot = EMPTY_SNAPSHOT
  let logs: UiLogEntry[] = []
@@ -152,6 +166,10 @@ const AXIS_MULTIPLIER_MAX = 9.0
  let yawNegMultiplierDraft = 1
  let pitchPosMultiplierDraft = 1
  let pitchNegMultiplierDraft = 1
+ let yawPosInputDeadzoneDraft = 0
+ let yawNegInputDeadzoneDraft = 0
+ let pitchPosInputDeadzoneDraft = 0
+ let pitchNegInputDeadzoneDraft = 0
  let axisLastEditAt = 0
  let axisApplyTimer: number | undefined
 
@@ -160,6 +178,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
  let spikeRejectionEnabledDraft = false
  let outputEasingEnabledDraft = true
  let outputEasingAlphaDraft = 0.18
+ let ets2RelativeAngularVelocityDraft = 120
  let outputEasingLastEditAt = 0
  let outputEasingApplyTimer: number | undefined
 
@@ -279,6 +298,17 @@ const AXIS_MULTIPLIER_MAX = 9.0
  function clampAxisMultiplier(value: number): number {
   return Math.min(AXIS_MULTIPLIER_MAX, Math.max(AXIS_MULTIPLIER_MIN, value))
  }
+
+ function clampAxisInputDeadzone(value: number): number {
+  return Math.min(AXIS_INPUT_DEADZONE_MAX, Math.max(AXIS_INPUT_DEADZONE_MIN, value))
+ }
+
+ function clampEts2RelativeAngularVelocity(value: number): number {
+  return Math.min(ETS2_RELATIVE_ANGULAR_VELOCITY_MAX, Math.max(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, value))
+ }
+
+ const axisIsActive = (value: number, deadzone: number, direction: 'positive' | 'negative') =>
+  direction === 'positive' ? value > deadzone : value < -deadzone
 
  function clampVmcOscPort(value: number): number {
   const rounded = Math.round(value)
@@ -495,6 +525,10 @@ const AXIS_MULTIPLIER_MAX = 9.0
     yawNegMultiplierDraft = latest.yawNegOutputMultiplier
     pitchPosMultiplierDraft = latest.pitchPosOutputMultiplier
     pitchNegMultiplierDraft = latest.pitchNegOutputMultiplier
+      yawPosInputDeadzoneDraft = latest.yawPosInputDeadzone
+      yawNegInputDeadzoneDraft = latest.yawNegInputDeadzone
+      pitchPosInputDeadzoneDraft = latest.pitchPosInputDeadzone
+      pitchNegInputDeadzoneDraft = latest.pitchNegInputDeadzone
    }
 
     if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
@@ -503,6 +537,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
      spikeRejectionEnabledDraft = latest.spikeRejectionEnabled
      outputEasingEnabledDraft = latest.outputEasingEnabled
      outputEasingAlphaDraft = latest.outputEasingAlpha
+    ets2RelativeAngularVelocityDraft = latest.ets2RelativeAngularVelocityDegPerSec
     }
 
    if (!previousSnapshot.inputConnected && latest.inputConnected) {
@@ -584,10 +619,20 @@ const AXIS_MULTIPLIER_MAX = 9.0
   yawNegMultiplierDraft = yawNeg
   pitchPosMultiplierDraft = pitchPos
   pitchNegMultiplierDraft = pitchNeg
+  yawPosInputDeadzoneDraft = clampAxisInputDeadzone(yawPosInputDeadzoneDraft)
+  yawNegInputDeadzoneDraft = clampAxisInputDeadzone(yawNegInputDeadzoneDraft)
+  pitchPosInputDeadzoneDraft = clampAxisInputDeadzone(pitchPosInputDeadzoneDraft)
+  pitchNegInputDeadzoneDraft = clampAxisInputDeadzone(pitchNegInputDeadzoneDraft)
 
   try {
    actionError = ''
    await setOutputAxisMultipliers(yawPos, yawNeg, pitchPos, pitchNeg)
+   await setOutputAxisInputDeadzones(
+    yawPosInputDeadzoneDraft,
+    yawNegInputDeadzoneDraft,
+    pitchPosInputDeadzoneDraft,
+    pitchNegInputDeadzoneDraft,
+   )
   } catch (error) {
    const message = String(error)
    actionError = message
@@ -626,6 +671,10 @@ const AXIS_MULTIPLIER_MAX = 9.0
   try {
    actionError = ''
    await setOutputEasing(outputEasingEnabledDraft, alpha)
+    if (snapshot.outputBackend === 'ets2_relative') {
+     ets2RelativeAngularVelocityDraft = clampEts2RelativeAngularVelocity(ets2RelativeAngularVelocityDraft)
+     await setEts2RelativeAngularVelocity(ets2RelativeAngularVelocityDraft)
+    }
   } catch (error) {
    const message = String(error)
    actionError = message
@@ -695,6 +744,16 @@ const AXIS_MULTIPLIER_MAX = 9.0
   queueAxisMultiplierApply()
  }
 
+ function onYawPosInputDeadzoneInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  yawPosInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
+  queueAxisMultiplierApply()
+ }
+
  function onYawNegMultiplierInput(event: Event) {
   const parsed = Number((event.currentTarget as HTMLInputElement).value)
   if (!Number.isFinite(parsed)) {
@@ -702,6 +761,16 @@ const AXIS_MULTIPLIER_MAX = 9.0
   }
 
   yawNegMultiplierDraft = clampAxisMultiplier(parsed)
+  queueAxisMultiplierApply()
+ }
+
+ function onYawNegInputDeadzoneInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  yawNegInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
   queueAxisMultiplierApply()
  }
 
@@ -715,6 +784,16 @@ const AXIS_MULTIPLIER_MAX = 9.0
   queueAxisMultiplierApply()
  }
 
+ function onPitchPosInputDeadzoneInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  pitchPosInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
+  queueAxisMultiplierApply()
+ }
+
  function onPitchNegMultiplierInput(event: Event) {
   const parsed = Number((event.currentTarget as HTMLInputElement).value)
   if (!Number.isFinite(parsed)) {
@@ -723,6 +802,26 @@ const AXIS_MULTIPLIER_MAX = 9.0
 
   pitchNegMultiplierDraft = clampAxisMultiplier(parsed)
   queueAxisMultiplierApply()
+ }
+
+ function onPitchNegInputDeadzoneInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  pitchNegInputDeadzoneDraft = clampAxisInputDeadzone(parsed)
+  queueAxisMultiplierApply()
+ }
+
+ function onEts2RelativeAngularVelocityInput(event: Event) {
+  const parsed = Number((event.currentTarget as HTMLInputElement).value)
+  if (!Number.isFinite(parsed)) {
+   return
+  }
+
+  ets2RelativeAngularVelocityDraft = clampEts2RelativeAngularVelocity(parsed)
+  queueOutputEasingApply()
  }
 
  function onLiveSendToggle(event: Event) {
@@ -1181,12 +1280,34 @@ const AXIS_MULTIPLIER_MAX = 9.0
     <h2>Axis Tuning (Instant Apply)</h2>
 
     <div class="axis-grid">
-     <article class={`axis-card pitch-pos ${snapshot.lookPitchNormRaw >= 0 ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card pitch-pos ${axisIsActive(snapshot.lookPitchNormRaw, snapshot.pitchPosInputDeadzone, 'positive') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Pitch+ (Up)</span>
        <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
+       <span class="axis-field-label">Input</span>
+       <input
+        id="pitch-pos-input-deadzone-range"
+        class="axis-slider"
+        type="range"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={pitchPosInputDeadzoneDraft}
+        on:input={onPitchPosInputDeadzoneInput}
+       />
+       <input
+        id="pitch-pos-input-deadzone-number"
+        class="axis-number"
+        type="number"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={pitchPosInputDeadzoneDraft}
+        on:input={onPitchPosInputDeadzoneInput}
+       />
+       <span class="axis-field-label">Output</span>
        <input
         id="pitch-pos-output-multiplier-range"
         class="axis-slider"
@@ -1208,15 +1329,37 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onPitchPosMultiplierInput}
        />
       </div>
-      <p class="axis-caption">x{snapshot.pitchPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
+      <p class="axis-caption">input &gt; {snapshot.pitchPosInputDeadzone.toFixed(2)} / output x{snapshot.pitchPosOutputMultiplier.toFixed(2)}</p>
      </article>
 
-     <article class={`axis-card yaw-neg ${snapshot.lookYawNormRaw < 0 ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card yaw-neg ${axisIsActive(snapshot.lookYawNormRaw, snapshot.yawNegInputDeadzone, 'negative') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Yaw- (Left)</span>
        <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
+       <span class="axis-field-label">Input</span>
+       <input
+        id="yaw-neg-input-deadzone-range"
+        class="axis-slider"
+        type="range"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={yawNegInputDeadzoneDraft}
+        on:input={onYawNegInputDeadzoneInput}
+       />
+       <input
+        id="yaw-neg-input-deadzone-number"
+        class="axis-number"
+        type="number"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={yawNegInputDeadzoneDraft}
+        on:input={onYawNegInputDeadzoneInput}
+       />
+       <span class="axis-field-label">Output</span>
        <input
         id="yaw-neg-output-multiplier-range"
         class="axis-slider"
@@ -1238,15 +1381,37 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onYawNegMultiplierInput}
        />
       </div>
-      <p class="axis-caption">x{snapshot.yawNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
+      <p class="axis-caption">input &lt; -{snapshot.yawNegInputDeadzone.toFixed(2)} / output x{snapshot.yawNegOutputMultiplier.toFixed(2)}</p>
      </article>
 
-     <article class={`axis-card yaw-pos ${snapshot.lookYawNormRaw >= 0 ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card yaw-pos ${axisIsActive(snapshot.lookYawNormRaw, snapshot.yawPosInputDeadzone, 'positive') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Yaw+ (Right)</span>
        <output>{snapshot.lookYawNormRaw.toFixed(3)} → {snapshot.lookYawNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
+       <span class="axis-field-label">Input</span>
+       <input
+        id="yaw-pos-input-deadzone-range"
+        class="axis-slider"
+        type="range"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={yawPosInputDeadzoneDraft}
+        on:input={onYawPosInputDeadzoneInput}
+       />
+       <input
+        id="yaw-pos-input-deadzone-number"
+        class="axis-number"
+        type="number"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={yawPosInputDeadzoneDraft}
+        on:input={onYawPosInputDeadzoneInput}
+       />
+       <span class="axis-field-label">Output</span>
        <input
         id="yaw-pos-output-multiplier-range"
         class="axis-slider"
@@ -1268,15 +1433,37 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onYawPosMultiplierInput}
        />
       </div>
-      <p class="axis-caption">x{snapshot.yawPosOutputMultiplier.toFixed(2)} (value &gt; 0)</p>
+      <p class="axis-caption">input &gt; {snapshot.yawPosInputDeadzone.toFixed(2)} / output x{snapshot.yawPosOutputMultiplier.toFixed(2)}</p>
      </article>
 
-     <article class={`axis-card pitch-neg ${snapshot.lookPitchNormRaw < 0 ? 'axis-active' : 'axis-inactive'}`}>
+     <article class={`axis-card pitch-neg ${axisIsActive(snapshot.lookPitchNormRaw, snapshot.pitchNegInputDeadzone, 'negative') ? 'axis-active' : 'axis-inactive'}`}>
       <div class="axis-head">
        <span>Pitch- (Down)</span>
        <output>{snapshot.lookPitchNormRaw.toFixed(3)} → {snapshot.lookPitchNorm.toFixed(3)}</output>
       </div>
       <div class="axis-editor">
+       <span class="axis-field-label">Input</span>
+       <input
+        id="pitch-neg-input-deadzone-range"
+        class="axis-slider"
+        type="range"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={pitchNegInputDeadzoneDraft}
+        on:input={onPitchNegInputDeadzoneInput}
+       />
+       <input
+        id="pitch-neg-input-deadzone-number"
+        class="axis-number"
+        type="number"
+        min={AXIS_INPUT_DEADZONE_MIN}
+        max={AXIS_INPUT_DEADZONE_MAX}
+        step={AXIS_INPUT_DEADZONE_STEP}
+        value={pitchNegInputDeadzoneDraft}
+        on:input={onPitchNegInputDeadzoneInput}
+       />
+       <span class="axis-field-label">Output</span>
        <input
         id="pitch-neg-output-multiplier-range"
         class="axis-slider"
@@ -1298,7 +1485,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
         on:input={onPitchNegMultiplierInput}
        />
       </div>
-      <p class="axis-caption">x{snapshot.pitchNegOutputMultiplier.toFixed(2)} (value &lt; 0)</p>
+      <p class="axis-caption">input &lt; -{snapshot.pitchNegInputDeadzone.toFixed(2)} / output x{snapshot.pitchNegOutputMultiplier.toFixed(2)}</p>
      </article>
     </div>
 
@@ -1323,6 +1510,7 @@ const AXIS_MULTIPLIER_MAX = 9.0
          <span>Easing enabled</span>
         </label>
         <div class="axis-editor">
+         <span class="axis-field-label">Alpha</span>
          <input
         id="output-easing-alpha-range"
         class="axis-slider"
@@ -1348,6 +1536,36 @@ const AXIS_MULTIPLIER_MAX = 9.0
         </div>
         <p class="axis-caption">alpha {snapshot.outputEasingAlpha.toFixed(2)}（低いほど滑らか/遅い, 高いほど追従/速い）</p>
        </article>
+
+        <article class="axis-advanced-card">
+         <h3>ETS2 / ATS Relative</h3>
+         <div class="axis-editor">
+         <span class="axis-field-label">Speed</span>
+          <input
+           id="ets2-relative-angular-velocity-range"
+           class="axis-slider"
+           type="range"
+           min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
+           max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
+           step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
+           value={ets2RelativeAngularVelocityDraft}
+           disabled={snapshot.outputBackend !== 'ets2_relative'}
+           on:input={onEts2RelativeAngularVelocityInput}
+          />
+          <input
+           id="ets2-relative-angular-velocity-number"
+           class="axis-number"
+           type="number"
+           min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
+           max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
+           step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
+           value={ets2RelativeAngularVelocityDraft}
+           disabled={snapshot.outputBackend !== 'ets2_relative'}
+           on:input={onEts2RelativeAngularVelocityInput}
+          />
+         </div>
+         <p class="axis-caption">{snapshot.ets2RelativeAngularVelocityDegPerSec.toFixed(0)} deg/sec</p>
+        </article>
       </div>
 
       <article class="axis-advanced-card">

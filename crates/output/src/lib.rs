@@ -27,6 +27,10 @@ impl OutputBackendLayer {
    output.send_filter.clone(),
    vec![
     (OutputBackendKind::Ets2, Box::new(unvet_output_ets2::Ets2Backend::default())),
+    (
+     OutputBackendKind::Ets2Relative,
+     Box::new(unvet_output_ets2::Ets2Backend::relative_headtracking()),
+    ),
     (OutputBackendKind::Mouse, Box::new(unvet_output_mouse::MouseBackend::default())),
     (
      OutputBackendKind::Keyboard,

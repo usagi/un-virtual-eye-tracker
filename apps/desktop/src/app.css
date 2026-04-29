@@ -382,9 +382,16 @@ textarea {
 
 .axis-editor {
  display: grid;
- grid-template-columns: minmax(0, 1fr) 74px;
+ grid-template-columns: 46px minmax(0, 1fr) 74px;
  gap: 8px;
  align-items: center;
+}
+
+.axis-field-label {
+ color: var(--ink-soft);
+ font-size: 11px;
+ text-transform: uppercase;
+ letter-spacing: 0.04em;
 }
 
 .axis-slider {
