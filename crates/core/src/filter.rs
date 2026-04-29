@@ -219,9 +219,19 @@ mod tests {
  #[test]
  fn output_frame_smoother_updates_axes_independently() {
   let mut smoother = OutputFrameSmoother::new(0.5);
-  let _ = smoother.update(OutputFrame { look_yaw_norm: 1.0, look_pitch_norm: -1.0, ..OutputFrame::default() });
+  let _ = smoother.update(OutputFrame {
+   look_yaw_norm: 1.0,
+   look_pitch_norm: -1.0,
+   ..OutputFrame::default()
+  });
 
-  let frame = smoother.update(OutputFrame { look_yaw_norm: 0.0, look_pitch_norm: 1.0, confidence: 0.7, active: false, ..OutputFrame::default() });
+  let frame = smoother.update(OutputFrame {
+   look_yaw_norm: 0.0,
+   look_pitch_norm: 1.0,
+   confidence: 0.7,
+   active: false,
+   ..OutputFrame::default()
+  });
 
   assert!((frame.look_yaw_norm - 0.5).abs() < 0.0001);
   assert!((frame.look_pitch_norm - 0.0).abs() < 0.0001);
@@ -241,10 +251,18 @@ mod tests {
  #[test]
  fn output_frame_smoother_allows_runtime_alpha_changes() {
   let mut smoother = OutputFrameSmoother::new(1.0);
-  let _ = smoother.update(OutputFrame { look_yaw_norm: 0.0, look_pitch_norm: 0.0, ..OutputFrame::default() });
+  let _ = smoother.update(OutputFrame {
+   look_yaw_norm: 0.0,
+   look_pitch_norm: 0.0,
+   ..OutputFrame::default()
+  });
 
   smoother.set_alpha(0.25);
-  let frame = smoother.update(OutputFrame { look_yaw_norm: 1.0, look_pitch_norm: -1.0, ..OutputFrame::default() });
+  let frame = smoother.update(OutputFrame {
+   look_yaw_norm: 1.0,
+   look_pitch_norm: -1.0,
+   ..OutputFrame::default()
+  });
 
   assert!((frame.look_yaw_norm - 0.25).abs() < 0.0001);
   assert!((frame.look_pitch_norm + 0.25).abs() < 0.0001);

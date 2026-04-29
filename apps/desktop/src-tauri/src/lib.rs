@@ -12,8 +12,8 @@ use std::process::{Child, Command, Stdio};
 use serde::Serialize;
 use tauri::State;
 use unvet_config::{
- AppConfig, ClutchHotkeyMode, InputConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind, OutputSendFilterConfig,
- OutputSendFilterMode, VmcOscPassthroughConfig, VmcOscPassthroughMode,
+ AppConfig, ClutchHotkeyMode, InputConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, OutputBackendKind,
+ OutputSendFilterConfig, OutputSendFilterMode, VmcOscPassthroughConfig, VmcOscPassthroughMode,
 };
 use unvet_core::{
  calibration::NeutralPoseCalibration,
@@ -37,10 +37,14 @@ const POLL_INTERVAL: Duration = Duration::from_millis(8);
 const IDLE_TIMEOUT: Duration = Duration::from_millis(250);
 const INPUT_LIVE_TIMEOUT: Duration = Duration::from_secs(1);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
-const AXIS_MULTIPLIER_MIN: f32 = 0.1;
-const AXIS_MULTIPLIER_MAX: f32 = 9.0;
+const AXIS_OUTPUT_RANGE_MIN: f32 = 0.0;
+const AXIS_OUTPUT_RANGE_MAX: f32 = 1.0;
+const AXIS_INPUT_DEADZONE_MIN: f32 = 0.0;
+const AXIS_INPUT_DEADZONE_MAX: f32 = 1.0;
 const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
 const OUTPUT_EASING_ALPHA_MAX: f32 = 1.0;
+const ETS2_RELATIVE_ANGULAR_VELOCITY_MIN: f32 = 1.0;
+const ETS2_RELATIVE_ANGULAR_VELOCITY_MAX: f32 = 720.0;
 
 #[cfg(target_os = "windows")]
 const TRACKIR_DUMMY_PROCESS_NAME: &str = "TrackIR.exe";
@@ -185,6 +189,19 @@ struct RuntimeSnapshot {
  yaw_neg_output_multiplier: f32,
  pitch_pos_output_multiplier: f32,
  pitch_neg_output_multiplier: f32,
+ yaw_pos_input_deadzone: f32,
+ yaw_neg_input_deadzone: f32,
+ pitch_pos_input_deadzone: f32,
+ pitch_neg_input_deadzone: f32,
+ yaw_pos_input_range_end: f32,
+ yaw_neg_input_range_end: f32,
+ pitch_pos_input_range_end: f32,
+ pitch_neg_input_range_end: f32,
+ yaw_pos_output_range_start: f32,
+ yaw_neg_output_range_start: f32,
+ pitch_pos_output_range_start: f32,
+ pitch_neg_output_range_start: f32,
+ ets2_relative_angular_velocity_deg_per_sec: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  spike_rejection_enabled: bool,
@@ -246,26 +263,146 @@ impl RuntimeSnapshot {
    },
    output_send_filter_active_process: None,
    yaw_pos_output_multiplier: if restore {
-    config.mapping.yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .yaw_pos_output_multiplier
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
    yaw_neg_output_multiplier: if restore {
-    config.mapping.yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .yaw_neg_output_multiplier
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
    pitch_pos_output_multiplier: if restore {
-    config.mapping.pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .pitch_pos_output_multiplier
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
    pitch_neg_output_multiplier: if restore {
-    config.mapping.pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX)
+    config
+     .mapping
+     .pitch_neg_output_multiplier
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
    } else {
     1.0
    },
-   spike_rejection_enabled: if restore { config.input_filter.spike_rejection_enabled } else { false },
+   yaw_pos_input_deadzone: if restore {
+    config
+     .mapping
+     .yaw_pos_input_deadzone
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    0.0
+   },
+   yaw_neg_input_deadzone: if restore {
+    config
+     .mapping
+     .yaw_neg_input_deadzone
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    0.0
+   },
+   pitch_pos_input_deadzone: if restore {
+    config
+     .mapping
+     .pitch_pos_input_deadzone
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    0.0
+   },
+   pitch_neg_input_deadzone: if restore {
+    config
+     .mapping
+     .pitch_neg_input_deadzone
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    0.0
+   },
+   yaw_pos_input_range_end: if restore {
+    config
+     .mapping
+     .yaw_pos_input_range_end
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    1.0
+   },
+   yaw_neg_input_range_end: if restore {
+    config
+     .mapping
+     .yaw_neg_input_range_end
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    1.0
+   },
+   pitch_pos_input_range_end: if restore {
+    config
+     .mapping
+     .pitch_pos_input_range_end
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    1.0
+   },
+   pitch_neg_input_range_end: if restore {
+    config
+     .mapping
+     .pitch_neg_input_range_end
+     .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX)
+   } else {
+    1.0
+   },
+   yaw_pos_output_range_start: if restore {
+    config
+     .mapping
+     .yaw_pos_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
+   } else {
+    0.0
+   },
+   yaw_neg_output_range_start: if restore {
+    config
+     .mapping
+     .yaw_neg_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
+   } else {
+    0.0
+   },
+   pitch_pos_output_range_start: if restore {
+    config
+     .mapping
+     .pitch_pos_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
+   } else {
+    0.0
+   },
+   pitch_neg_output_range_start: if restore {
+    config
+     .mapping
+     .pitch_neg_output_range_start
+     .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX)
+   } else {
+    0.0
+   },
+   ets2_relative_angular_velocity_deg_per_sec: if restore {
+    config
+     .mapping
+     .ets2_relative_angular_velocity_deg_per_sec
+     .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX)
+   } else {
+    MappingConfig::default().ets2_relative_angular_velocity_deg_per_sec
+   },
+   spike_rejection_enabled: if restore {
+    config.input_filter.spike_rejection_enabled
+   } else {
+    false
+   },
    invert_output_yaw: if restore { config.mapping.invert_output_yaw } else { false },
    invert_output_pitch: if restore { config.mapping.invert_output_pitch } else { false },
    output_easing_enabled: if restore { config.mapping.output_easing_enabled } else { true },
@@ -305,6 +442,19 @@ struct RuntimeShared {
  desired_yaw_neg_output_multiplier: f32,
  desired_pitch_pos_output_multiplier: f32,
  desired_pitch_neg_output_multiplier: f32,
+ desired_yaw_pos_input_deadzone: f32,
+ desired_yaw_neg_input_deadzone: f32,
+ desired_pitch_pos_input_deadzone: f32,
+ desired_pitch_neg_input_deadzone: f32,
+ desired_yaw_pos_input_range_end: f32,
+ desired_yaw_neg_input_range_end: f32,
+ desired_pitch_pos_input_range_end: f32,
+ desired_pitch_neg_input_range_end: f32,
+ desired_yaw_pos_output_range_start: f32,
+ desired_yaw_neg_output_range_start: f32,
+ desired_pitch_pos_output_range_start: f32,
+ desired_pitch_neg_output_range_start: f32,
+ desired_ets2_relative_angular_velocity_deg_per_sec: f32,
  desired_invert_output_yaw: bool,
  desired_invert_output_pitch: bool,
  desired_spike_rejection_enabled: bool,
@@ -343,6 +493,19 @@ impl RuntimeState {
     desired_yaw_neg_output_multiplier: snapshot.yaw_neg_output_multiplier,
     desired_pitch_pos_output_multiplier: snapshot.pitch_pos_output_multiplier,
     desired_pitch_neg_output_multiplier: snapshot.pitch_neg_output_multiplier,
+    desired_yaw_pos_input_deadzone: snapshot.yaw_pos_input_deadzone,
+    desired_yaw_neg_input_deadzone: snapshot.yaw_neg_input_deadzone,
+    desired_pitch_pos_input_deadzone: snapshot.pitch_pos_input_deadzone,
+    desired_pitch_neg_input_deadzone: snapshot.pitch_neg_input_deadzone,
+    desired_yaw_pos_input_range_end: snapshot.yaw_pos_input_range_end,
+    desired_yaw_neg_input_range_end: snapshot.yaw_neg_input_range_end,
+    desired_pitch_pos_input_range_end: snapshot.pitch_pos_input_range_end,
+    desired_pitch_neg_input_range_end: snapshot.pitch_neg_input_range_end,
+    desired_yaw_pos_output_range_start: snapshot.yaw_pos_output_range_start,
+    desired_yaw_neg_output_range_start: snapshot.yaw_neg_output_range_start,
+    desired_pitch_pos_output_range_start: snapshot.pitch_pos_output_range_start,
+    desired_pitch_neg_output_range_start: snapshot.pitch_neg_output_range_start,
+    desired_ets2_relative_angular_velocity_deg_per_sec: snapshot.ets2_relative_angular_velocity_deg_per_sec,
     desired_invert_output_yaw: snapshot.invert_output_yaw,
     desired_invert_output_pitch: snapshot.invert_output_pitch,
     desired_spike_rejection_enabled: snapshot.spike_rejection_enabled,
@@ -372,6 +535,19 @@ struct RuntimeDesired {
  yaw_neg_output_multiplier: f32,
  pitch_pos_output_multiplier: f32,
  pitch_neg_output_multiplier: f32,
+ yaw_pos_input_deadzone: f32,
+ yaw_neg_input_deadzone: f32,
+ pitch_pos_input_deadzone: f32,
+ pitch_neg_input_deadzone: f32,
+ yaw_pos_input_range_end: f32,
+ yaw_neg_input_range_end: f32,
+ pitch_pos_input_range_end: f32,
+ pitch_neg_input_range_end: f32,
+ yaw_pos_output_range_start: f32,
+ yaw_neg_output_range_start: f32,
+ pitch_pos_output_range_start: f32,
+ pitch_neg_output_range_start: f32,
+ ets2_relative_angular_velocity_deg_per_sec: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  spike_rejection_enabled: bool,
@@ -452,27 +628,81 @@ fn set_persist_session_settings(enabled: bool, state: State<RuntimeState>) {
 }
 
 #[tauri::command]
-fn set_output_axis_multipliers(
- yaw_pos_output_multiplier: f32,
- yaw_neg_output_multiplier: f32,
- pitch_pos_output_multiplier: f32,
- pitch_neg_output_multiplier: f32,
+fn set_output_axis_ranges(
+ yaw_pos_input_start: f32,
+ yaw_pos_input_end: f32,
+ yaw_pos_output_start: f32,
+ yaw_pos_output_end: f32,
+ yaw_neg_input_start: f32,
+ yaw_neg_input_end: f32,
+ yaw_neg_output_start: f32,
+ yaw_neg_output_end: f32,
+ pitch_pos_input_start: f32,
+ pitch_pos_input_end: f32,
+ pitch_pos_output_start: f32,
+ pitch_pos_output_end: f32,
+ pitch_neg_input_start: f32,
+ pitch_neg_input_end: f32,
+ pitch_neg_output_start: f32,
+ pitch_neg_output_end: f32,
  state: State<RuntimeState>,
 ) {
- let clamped_yaw_pos = yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- let clamped_yaw_neg = yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- let clamped_pitch_pos = pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- let clamped_pitch_neg = pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ let yaw_pos_input = sanitize_input_range(yaw_pos_input_start, yaw_pos_input_end);
+ let yaw_neg_input = sanitize_input_range(yaw_neg_input_start, yaw_neg_input_end);
+ let pitch_pos_input = sanitize_input_range(pitch_pos_input_start, pitch_pos_input_end);
+ let pitch_neg_input = sanitize_input_range(pitch_neg_input_start, pitch_neg_input_end);
+ let yaw_pos_output = sanitize_output_range(yaw_pos_output_start, yaw_pos_output_end);
+ let yaw_neg_output = sanitize_output_range(yaw_neg_output_start, yaw_neg_output_end);
+ let pitch_pos_output = sanitize_output_range(pitch_pos_output_start, pitch_pos_output_end);
+ let pitch_neg_output = sanitize_output_range(pitch_neg_output_start, pitch_neg_output_end);
 
  let mut guard = state.shared.lock().expect("runtime state lock");
- guard.desired_yaw_pos_output_multiplier = clamped_yaw_pos;
- guard.desired_yaw_neg_output_multiplier = clamped_yaw_neg;
- guard.desired_pitch_pos_output_multiplier = clamped_pitch_pos;
- guard.desired_pitch_neg_output_multiplier = clamped_pitch_neg;
- guard.snapshot.yaw_pos_output_multiplier = clamped_yaw_pos;
- guard.snapshot.yaw_neg_output_multiplier = clamped_yaw_neg;
- guard.snapshot.pitch_pos_output_multiplier = clamped_pitch_pos;
- guard.snapshot.pitch_neg_output_multiplier = clamped_pitch_neg;
+ guard.desired_yaw_pos_input_deadzone = yaw_pos_input.0;
+ guard.desired_yaw_pos_input_range_end = yaw_pos_input.1;
+ guard.desired_yaw_pos_output_range_start = yaw_pos_output.0;
+ guard.desired_yaw_pos_output_multiplier = yaw_pos_output.1;
+ guard.desired_yaw_neg_input_deadzone = yaw_neg_input.0;
+ guard.desired_yaw_neg_input_range_end = yaw_neg_input.1;
+ guard.desired_yaw_neg_output_range_start = yaw_neg_output.0;
+ guard.desired_yaw_neg_output_multiplier = yaw_neg_output.1;
+ guard.desired_pitch_pos_input_deadzone = pitch_pos_input.0;
+ guard.desired_pitch_pos_input_range_end = pitch_pos_input.1;
+ guard.desired_pitch_pos_output_range_start = pitch_pos_output.0;
+ guard.desired_pitch_pos_output_multiplier = pitch_pos_output.1;
+ guard.desired_pitch_neg_input_deadzone = pitch_neg_input.0;
+ guard.desired_pitch_neg_input_range_end = pitch_neg_input.1;
+ guard.desired_pitch_neg_output_range_start = pitch_neg_output.0;
+ guard.desired_pitch_neg_output_multiplier = pitch_neg_output.1;
+
+ guard.snapshot.yaw_pos_input_deadzone = yaw_pos_input.0;
+ guard.snapshot.yaw_pos_input_range_end = yaw_pos_input.1;
+ guard.snapshot.yaw_pos_output_range_start = yaw_pos_output.0;
+ guard.snapshot.yaw_pos_output_multiplier = yaw_pos_output.1;
+ guard.snapshot.yaw_neg_input_deadzone = yaw_neg_input.0;
+ guard.snapshot.yaw_neg_input_range_end = yaw_neg_input.1;
+ guard.snapshot.yaw_neg_output_range_start = yaw_neg_output.0;
+ guard.snapshot.yaw_neg_output_multiplier = yaw_neg_output.1;
+ guard.snapshot.pitch_pos_input_deadzone = pitch_pos_input.0;
+ guard.snapshot.pitch_pos_input_range_end = pitch_pos_input.1;
+ guard.snapshot.pitch_pos_output_range_start = pitch_pos_output.0;
+ guard.snapshot.pitch_pos_output_multiplier = pitch_pos_output.1;
+ guard.snapshot.pitch_neg_input_deadzone = pitch_neg_input.0;
+ guard.snapshot.pitch_neg_input_range_end = pitch_neg_input.1;
+ guard.snapshot.pitch_neg_output_range_start = pitch_neg_output.0;
+ guard.snapshot.pitch_neg_output_multiplier = pitch_neg_output.1;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+}
+
+#[tauri::command]
+fn set_ets2_relative_angular_velocity(angular_velocity_deg_per_sec: f32, state: State<RuntimeState>) {
+ let clamped_velocity = angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_ets2_relative_angular_velocity_deg_per_sec = clamped_velocity;
+ guard.snapshot.ets2_relative_angular_velocity_deg_per_sec = clamped_velocity;
  guard.snapshot.updated_at_ms = now_millis();
  drop(guard);
 
@@ -655,7 +885,8 @@ pub fn run() {
    set_output_clutch_hotkey,
    set_output_clutch_hotkey_mode,
    set_persist_session_settings,
-   set_output_axis_multipliers,
+   set_output_axis_ranges,
+   set_ets2_relative_angular_velocity,
    set_output_axis_inversion,
    set_output_easing,
    set_paused,
@@ -809,14 +1040,62 @@ fn load_config_or_default() -> (AppConfig, PathBuf) {
 fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
  thread::spawn(move || {
   let mut active_mapping = config.effective_mapping();
-  active_mapping.yaw_pos_output_multiplier = active_mapping.yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
-  active_mapping.yaw_neg_output_multiplier = active_mapping.yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
-  active_mapping.pitch_pos_output_multiplier = active_mapping.pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
-  active_mapping.pitch_neg_output_multiplier = active_mapping.pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+  active_mapping.yaw_pos_output_multiplier = active_mapping
+   .yaw_pos_output_multiplier
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.yaw_neg_output_multiplier = active_mapping
+   .yaw_neg_output_multiplier
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.pitch_pos_output_multiplier = active_mapping
+   .pitch_pos_output_multiplier
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.pitch_neg_output_multiplier = active_mapping
+   .pitch_neg_output_multiplier
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.yaw_pos_input_deadzone = active_mapping
+   .yaw_pos_input_deadzone
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.yaw_neg_input_deadzone = active_mapping
+   .yaw_neg_input_deadzone
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.pitch_pos_input_deadzone = active_mapping
+   .pitch_pos_input_deadzone
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.pitch_neg_input_deadzone = active_mapping
+   .pitch_neg_input_deadzone
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.yaw_pos_input_range_end = active_mapping
+   .yaw_pos_input_range_end
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.yaw_neg_input_range_end = active_mapping
+   .yaw_neg_input_range_end
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.pitch_pos_input_range_end = active_mapping
+   .pitch_pos_input_range_end
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.pitch_neg_input_range_end = active_mapping
+   .pitch_neg_input_range_end
+   .clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+  active_mapping.yaw_pos_output_range_start = active_mapping
+   .yaw_pos_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.yaw_neg_output_range_start = active_mapping
+   .yaw_neg_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.pitch_pos_output_range_start = active_mapping
+   .pitch_pos_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.pitch_neg_output_range_start = active_mapping
+   .pitch_neg_output_range_start
+   .clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+  active_mapping.ets2_relative_angular_velocity_deg_per_sec = active_mapping
+   .ets2_relative_angular_velocity_deg_per_sec
+   .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
   active_mapping.smoothing_alpha = active_mapping
    .smoothing_alpha
    .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
   let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
+  let mut ets2_relative_mapper = Ets2RelativeMapper::new(active_mapping.ets2_relative_angular_velocity_deg_per_sec);
   let mut frame_stabilizer = TrackingFrameStabilizer::new(config.input_filter.spike_rejection_enabled);
   let mut calibration = build_calibration(&config);
 
@@ -855,6 +1134,49 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    }
    if (active_mapping.pitch_neg_output_multiplier - desired.pitch_neg_output_multiplier).abs() > f32::EPSILON {
     active_mapping.pitch_neg_output_multiplier = desired.pitch_neg_output_multiplier;
+   }
+   if (active_mapping.yaw_pos_input_deadzone - desired.yaw_pos_input_deadzone).abs() > f32::EPSILON {
+    active_mapping.yaw_pos_input_deadzone = desired.yaw_pos_input_deadzone;
+   }
+   if (active_mapping.yaw_neg_input_deadzone - desired.yaw_neg_input_deadzone).abs() > f32::EPSILON {
+    active_mapping.yaw_neg_input_deadzone = desired.yaw_neg_input_deadzone;
+   }
+   if (active_mapping.pitch_pos_input_deadzone - desired.pitch_pos_input_deadzone).abs() > f32::EPSILON {
+    active_mapping.pitch_pos_input_deadzone = desired.pitch_pos_input_deadzone;
+   }
+   if (active_mapping.pitch_neg_input_deadzone - desired.pitch_neg_input_deadzone).abs() > f32::EPSILON {
+    active_mapping.pitch_neg_input_deadzone = desired.pitch_neg_input_deadzone;
+   }
+   if (active_mapping.yaw_pos_input_range_end - desired.yaw_pos_input_range_end).abs() > f32::EPSILON {
+    active_mapping.yaw_pos_input_range_end = desired.yaw_pos_input_range_end;
+   }
+   if (active_mapping.yaw_neg_input_range_end - desired.yaw_neg_input_range_end).abs() > f32::EPSILON {
+    active_mapping.yaw_neg_input_range_end = desired.yaw_neg_input_range_end;
+   }
+   if (active_mapping.pitch_pos_input_range_end - desired.pitch_pos_input_range_end).abs() > f32::EPSILON {
+    active_mapping.pitch_pos_input_range_end = desired.pitch_pos_input_range_end;
+   }
+   if (active_mapping.pitch_neg_input_range_end - desired.pitch_neg_input_range_end).abs() > f32::EPSILON {
+    active_mapping.pitch_neg_input_range_end = desired.pitch_neg_input_range_end;
+   }
+   if (active_mapping.yaw_pos_output_range_start - desired.yaw_pos_output_range_start).abs() > f32::EPSILON {
+    active_mapping.yaw_pos_output_range_start = desired.yaw_pos_output_range_start;
+   }
+   if (active_mapping.yaw_neg_output_range_start - desired.yaw_neg_output_range_start).abs() > f32::EPSILON {
+    active_mapping.yaw_neg_output_range_start = desired.yaw_neg_output_range_start;
+   }
+   if (active_mapping.pitch_pos_output_range_start - desired.pitch_pos_output_range_start).abs() > f32::EPSILON {
+    active_mapping.pitch_pos_output_range_start = desired.pitch_pos_output_range_start;
+   }
+   if (active_mapping.pitch_neg_output_range_start - desired.pitch_neg_output_range_start).abs() > f32::EPSILON {
+    active_mapping.pitch_neg_output_range_start = desired.pitch_neg_output_range_start;
+   }
+   let desired_relative_velocity = desired
+    .ets2_relative_angular_velocity_deg_per_sec
+    .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+   if (active_mapping.ets2_relative_angular_velocity_deg_per_sec - desired_relative_velocity).abs() > f32::EPSILON {
+    active_mapping.ets2_relative_angular_velocity_deg_per_sec = desired_relative_velocity;
+    ets2_relative_mapper.set_angular_velocity_deg_per_sec(desired_relative_velocity);
    }
    if active_mapping.invert_output_yaw != desired.invert_output_yaw {
     active_mapping.invert_output_yaw = desired.invert_output_yaw;
@@ -929,6 +1251,8 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     match output_layer.set_active_backend(desired.output_backend) {
      Ok(()) => {
       active_backend = desired.output_backend;
+      ets2_relative_mapper.reset();
+      frame_smoother.reset();
       clear_snapshot_error(&shared);
      },
      Err(error) => set_snapshot_error(&shared, format!("backend switch failed: {error}")),
@@ -991,6 +1315,12 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     let stable_frame = frame_stabilizer.update(frame);
     let calibrated_frame = calibration.apply(stable_frame);
     let output_frame = build_output_frame(calibrated_frame, &active_mapping, active_input_source);
+    let output_frame = if matches!(active_backend, OutputBackendKind::Ets2Relative) {
+     ets2_relative_mapper.update(output_frame)
+    } else {
+     ets2_relative_mapper.reset();
+     output_frame
+    };
     let smoothed_output = if active_mapping.output_easing_enabled {
      frame_smoother.update(output_frame)
     } else {
@@ -1028,7 +1358,7 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
     }
 
     let idle_expired = last_frame_at.elapsed() >= IDLE_TIMEOUT;
-    let keep_idle_streaming = matches!(active_backend, OutputBackendKind::Ets2);
+    let keep_idle_streaming = matches!(active_backend, OutputBackendKind::Ets2 | OutputBackendKind::Ets2Relative);
     if idle_expired && (!forced_idle_output || keep_idle_streaming) {
      if output_live {
       let _ = output_layer.apply(OutputFrame::default());
@@ -1064,6 +1394,64 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
  });
 }
 
+#[derive(Debug)]
+struct Ets2RelativeMapper {
+ yaw_deg: f32,
+ pitch_deg: f32,
+ angular_velocity_deg_per_sec: f32,
+ last_update_at: Option<Instant>,
+}
+
+impl Ets2RelativeMapper {
+ fn new(angular_velocity_deg_per_sec: f32) -> Self {
+  Self {
+   yaw_deg: 0.0,
+   pitch_deg: 0.0,
+   angular_velocity_deg_per_sec: angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX),
+   last_update_at: None,
+  }
+ }
+
+ fn set_angular_velocity_deg_per_sec(&mut self, angular_velocity_deg_per_sec: f32) {
+  self.angular_velocity_deg_per_sec =
+   angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+ }
+
+ fn reset(&mut self) {
+  self.yaw_deg = 0.0;
+  self.pitch_deg = 0.0;
+  self.last_update_at = None;
+ }
+
+ fn update(&mut self, frame: OutputFrame) -> OutputFrame {
+  let now = Instant::now();
+  let elapsed_secs = self
+   .last_update_at
+   .map(|last| now.duration_since(last).as_secs_f32().clamp(0.0, 0.1))
+   .unwrap_or(0.0);
+  self.last_update_at = Some(now);
+
+  if !frame.active {
+   self.reset();
+   return OutputFrame::default();
+  }
+
+  self.yaw_deg =
+   (self.yaw_deg + frame.look_yaw_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
+  self.pitch_deg =
+   (self.pitch_deg + frame.look_pitch_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
+
+  OutputFrame {
+   look_yaw_norm: self.yaw_deg / 180.0,
+   look_pitch_norm: self.pitch_deg / 180.0,
+   look_yaw_norm_raw: frame.look_yaw_norm_raw,
+   look_pitch_norm_raw: frame.look_pitch_norm_raw,
+   confidence: frame.confidence,
+   active: frame.active,
+  }
+ }
+}
+
 fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
  let mut guard = shared.lock().expect("runtime state lock");
  let recalibration_requested = guard.request_recalibration;
@@ -1083,6 +1471,19 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
   yaw_neg_output_multiplier: guard.desired_yaw_neg_output_multiplier,
   pitch_pos_output_multiplier: guard.desired_pitch_pos_output_multiplier,
   pitch_neg_output_multiplier: guard.desired_pitch_neg_output_multiplier,
+  yaw_pos_input_deadzone: guard.desired_yaw_pos_input_deadzone,
+  yaw_neg_input_deadzone: guard.desired_yaw_neg_input_deadzone,
+  pitch_pos_input_deadzone: guard.desired_pitch_pos_input_deadzone,
+  pitch_neg_input_deadzone: guard.desired_pitch_neg_input_deadzone,
+  yaw_pos_input_range_end: guard.desired_yaw_pos_input_range_end,
+  yaw_neg_input_range_end: guard.desired_yaw_neg_input_range_end,
+  pitch_pos_input_range_end: guard.desired_pitch_pos_input_range_end,
+  pitch_neg_input_range_end: guard.desired_pitch_neg_input_range_end,
+  yaw_pos_output_range_start: guard.desired_yaw_pos_output_range_start,
+  yaw_neg_output_range_start: guard.desired_yaw_neg_output_range_start,
+  pitch_pos_output_range_start: guard.desired_pitch_pos_output_range_start,
+  pitch_neg_output_range_start: guard.desired_pitch_neg_output_range_start,
+  ets2_relative_angular_velocity_deg_per_sec: guard.desired_ets2_relative_angular_velocity_deg_per_sec,
   invert_output_yaw: guard.desired_invert_output_yaw,
   invert_output_pitch: guard.desired_invert_output_pitch,
   spike_rejection_enabled: guard.desired_spike_rejection_enabled,
@@ -1212,6 +1613,19 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   yaw_neg_output_multiplier,
   pitch_pos_output_multiplier,
   pitch_neg_output_multiplier,
+  yaw_pos_input_deadzone,
+  yaw_neg_input_deadzone,
+  pitch_pos_input_deadzone,
+  pitch_neg_input_deadzone,
+  yaw_pos_input_range_end,
+  yaw_neg_input_range_end,
+  pitch_pos_input_range_end,
+  pitch_neg_input_range_end,
+  yaw_pos_output_range_start,
+  yaw_neg_output_range_start,
+  pitch_pos_output_range_start,
+  pitch_neg_output_range_start,
+  ets2_relative_angular_velocity_deg_per_sec,
   invert_output_yaw,
   invert_output_pitch,
   spike_rejection_enabled,
@@ -1235,6 +1649,19 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.snapshot.yaw_neg_output_multiplier,
    guard.snapshot.pitch_pos_output_multiplier,
    guard.snapshot.pitch_neg_output_multiplier,
+   guard.snapshot.yaw_pos_input_deadzone,
+   guard.snapshot.yaw_neg_input_deadzone,
+   guard.snapshot.pitch_pos_input_deadzone,
+   guard.snapshot.pitch_neg_input_deadzone,
+   guard.snapshot.yaw_pos_input_range_end,
+   guard.snapshot.yaw_neg_input_range_end,
+   guard.snapshot.pitch_pos_input_range_end,
+   guard.snapshot.pitch_neg_input_range_end,
+   guard.snapshot.yaw_pos_output_range_start,
+   guard.snapshot.yaw_neg_output_range_start,
+   guard.snapshot.pitch_pos_output_range_start,
+   guard.snapshot.pitch_neg_output_range_start,
+   guard.snapshot.ets2_relative_angular_velocity_deg_per_sec,
    guard.snapshot.invert_output_yaw,
    guard.snapshot.invert_output_pitch,
    guard.snapshot.spike_rejection_enabled,
@@ -1259,10 +1686,24 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   mode: output_send_filter_mode,
   process_names: output_send_filter_process_names,
  };
- config.mapping.yaw_pos_output_multiplier = yaw_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.yaw_neg_output_multiplier = yaw_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_pos_output_multiplier = pitch_pos_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
- config.mapping.pitch_neg_output_multiplier = pitch_neg_output_multiplier.clamp(AXIS_MULTIPLIER_MIN, AXIS_MULTIPLIER_MAX);
+ config.mapping.yaw_pos_output_multiplier = yaw_pos_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.yaw_neg_output_multiplier = yaw_neg_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_pos_output_multiplier = pitch_pos_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_neg_output_multiplier = pitch_neg_output_multiplier.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.yaw_pos_input_deadzone = yaw_pos_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.yaw_neg_input_deadzone = yaw_neg_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.pitch_pos_input_deadzone = pitch_pos_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.pitch_neg_input_deadzone = pitch_neg_input_deadzone.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.yaw_pos_input_range_end = yaw_pos_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.yaw_neg_input_range_end = yaw_neg_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.pitch_pos_input_range_end = pitch_pos_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.pitch_neg_input_range_end = pitch_neg_input_range_end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ config.mapping.yaw_pos_output_range_start = yaw_pos_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.yaw_neg_output_range_start = yaw_neg_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_pos_output_range_start = pitch_pos_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.pitch_neg_output_range_start = pitch_neg_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ config.mapping.ets2_relative_angular_velocity_deg_per_sec =
+  ets2_relative_angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
  config.mapping.invert_output_yaw = invert_output_yaw;
  config.mapping.invert_output_pitch = invert_output_pitch;
  config.input_filter.spike_rejection_enabled = spike_rejection_enabled;
@@ -1363,6 +1804,26 @@ fn format_passthrough_target(host: &str, port: u16) -> String {
  }
 }
 
+fn sanitize_input_range(start: f32, end: f32) -> (f32, f32) {
+ let start = start.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ let end = end.clamp(AXIS_INPUT_DEADZONE_MIN, AXIS_INPUT_DEADZONE_MAX);
+ if start <= end {
+  (start, end)
+ } else {
+  (end, start)
+ }
+}
+
+fn sanitize_output_range(start: f32, end: f32) -> (f32, f32) {
+ let start = start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ let end = end.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
+ if start <= end {
+  (start, end)
+ } else {
+  (end, start)
+ }
+}
+
 fn sanitize_process_names(process_names: Vec<String>) -> Vec<String> {
  let mut normalized = process_names
   .iter()
@@ -1439,17 +1900,63 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
  let pitch_raw = map_angle_to_normalized(mixed_pitch * pitch_invert, pitch_settings);
 
  OutputFrame {
-  look_yaw_norm: {
-   let yaw_multiplier = if yaw_raw >= 0.0 { mapping.yaw_pos_output_multiplier } else { mapping.yaw_neg_output_multiplier };
-   (yaw_raw * yaw_multiplier).clamp(-1.0, 1.0)
-  },
-  look_pitch_norm: {
-   let pitch_multiplier = if pitch_raw >= 0.0 { mapping.pitch_pos_output_multiplier } else { mapping.pitch_neg_output_multiplier };
-   (pitch_raw * pitch_multiplier).clamp(-1.0, 1.0)
-  },
+  look_yaw_norm: map_directional_axis(
+   yaw_raw,
+   mapping.yaw_pos_input_deadzone,
+   mapping.yaw_pos_input_range_end,
+   mapping.yaw_pos_output_range_start,
+   mapping.yaw_pos_output_multiplier,
+   mapping.yaw_neg_input_deadzone,
+   mapping.yaw_neg_input_range_end,
+   mapping.yaw_neg_output_range_start,
+   mapping.yaw_neg_output_multiplier,
+  ),
+  look_pitch_norm: map_directional_axis(
+   pitch_raw,
+   mapping.pitch_pos_input_deadzone,
+   mapping.pitch_pos_input_range_end,
+   mapping.pitch_pos_output_range_start,
+   mapping.pitch_pos_output_multiplier,
+   mapping.pitch_neg_input_deadzone,
+   mapping.pitch_neg_input_range_end,
+   mapping.pitch_neg_output_range_start,
+   mapping.pitch_neg_output_multiplier,
+  ),
   look_yaw_norm_raw: yaw_raw,
   look_pitch_norm_raw: pitch_raw,
   confidence: frame.confidence,
   active: frame.active,
  }
+}
+
+fn map_directional_axis(
+ value: f32,
+ pos_input_start: f32,
+ pos_input_end: f32,
+ pos_output_start: f32,
+ pos_output_end: f32,
+ neg_input_start: f32,
+ neg_input_end: f32,
+ neg_output_start: f32,
+ neg_output_end: f32,
+) -> f32 {
+ let value = value.clamp(-1.0, 1.0);
+ if value > 0.0 {
+  project_axis_magnitude(value, pos_input_start, pos_input_end, pos_output_start, pos_output_end)
+ } else if value < 0.0 {
+  -project_axis_magnitude(value.abs(), neg_input_start, neg_input_end, neg_output_start, neg_output_end)
+ } else {
+  0.0
+ }
+}
+
+fn project_axis_magnitude(value: f32, input_start: f32, input_end: f32, output_start: f32, output_end: f32) -> f32 {
+ let (input_start, input_end) = sanitize_input_range(input_start, input_end);
+ if value < input_start || value > input_end || (input_end - input_start).abs() <= f32::EPSILON {
+  return 0.0;
+ }
+
+ let (output_start, output_end) = sanitize_output_range(output_start, output_end);
+ let t = ((value - input_start) / (input_end - input_start)).clamp(0.0, 1.0);
+ output_start + (output_end - output_start) * t
 }

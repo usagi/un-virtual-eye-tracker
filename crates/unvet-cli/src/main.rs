@@ -8,13 +8,13 @@ use std::{
 use tracing::{info, warn};
 use unvet_config::{AppConfig, InputSource, MappingBlendPreset, MappingConfig, MappingCurvePreset, VmcOscPassthroughMode};
 use unvet_core::{
+ AppResult,
  calibration::NeutralPoseCalibration,
  filter::{OutputFrameSmoother, TrackingFrameStabilizer},
  logging,
- mapping::{map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix, AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset},
+ mapping::{AxisMappingSettings, HeadEyeBlendPreset, ResponseCurvePreset, map_angle_to_normalized, mix_eye_and_head, resolve_head_eye_mix},
  model::{OutputFrame, TrackingFrame},
  ports::InputReceiver,
- AppResult,
 };
 use unvet_input_ifacialmocap::{IfacialMocapReceiver, ReceiverOptions};
 use unvet_input_vmc_osc::{
@@ -134,19 +134,77 @@ fn build_output_frame(frame: TrackingFrame, mapping: &MappingConfig, input_sourc
  let pitch_raw = map_angle_to_normalized(mixed_pitch * pitch_invert, pitch_settings);
 
  OutputFrame {
-  look_yaw_norm: {
-   let yaw_multiplier = if yaw_raw >= 0.0 { mapping.yaw_pos_output_multiplier } else { mapping.yaw_neg_output_multiplier };
-   (yaw_raw * yaw_multiplier).clamp(-1.0, 1.0)
-  },
-  look_pitch_norm: {
-   let pitch_multiplier = if pitch_raw >= 0.0 { mapping.pitch_pos_output_multiplier } else { mapping.pitch_neg_output_multiplier };
-   (pitch_raw * pitch_multiplier).clamp(-1.0, 1.0)
-  },
+  look_yaw_norm: map_directional_axis(
+   yaw_raw,
+   mapping.yaw_pos_input_deadzone,
+   mapping.yaw_pos_input_range_end,
+   mapping.yaw_pos_output_range_start,
+   mapping.yaw_pos_output_multiplier,
+   mapping.yaw_neg_input_deadzone,
+   mapping.yaw_neg_input_range_end,
+   mapping.yaw_neg_output_range_start,
+   mapping.yaw_neg_output_multiplier,
+  ),
+  look_pitch_norm: map_directional_axis(
+   pitch_raw,
+   mapping.pitch_pos_input_deadzone,
+   mapping.pitch_pos_input_range_end,
+   mapping.pitch_pos_output_range_start,
+   mapping.pitch_pos_output_multiplier,
+   mapping.pitch_neg_input_deadzone,
+   mapping.pitch_neg_input_range_end,
+   mapping.pitch_neg_output_range_start,
+   mapping.pitch_neg_output_multiplier,
+  ),
   look_yaw_norm_raw: yaw_raw,
   look_pitch_norm_raw: pitch_raw,
   confidence: frame.confidence,
   active: frame.active,
  }
+}
+
+fn map_directional_axis(
+ value: f32,
+ pos_input_start: f32,
+ pos_input_end: f32,
+ pos_output_start: f32,
+ pos_output_end: f32,
+ neg_input_start: f32,
+ neg_input_end: f32,
+ neg_output_start: f32,
+ neg_output_end: f32,
+) -> f32 {
+ let value = value.clamp(-1.0, 1.0);
+ if value > 0.0 {
+  project_axis_magnitude(value, pos_input_start, pos_input_end, pos_output_start, pos_output_end)
+ } else if value < 0.0 {
+  -project_axis_magnitude(value.abs(), neg_input_start, neg_input_end, neg_output_start, neg_output_end)
+ } else {
+  0.0
+ }
+}
+
+fn project_axis_magnitude(value: f32, input_start: f32, input_end: f32, output_start: f32, output_end: f32) -> f32 {
+ let input_start = input_start.clamp(0.0, 1.0);
+ let input_end = input_end.clamp(0.0, 1.0);
+ let (input_start, input_end) = if input_start <= input_end {
+  (input_start, input_end)
+ } else {
+  (input_end, input_start)
+ };
+ if value < input_start || value > input_end || (input_end - input_start).abs() <= f32::EPSILON {
+  return 0.0;
+ }
+
+ let output_start = output_start.clamp(0.0, 1.0);
+ let output_end = output_end.clamp(0.0, 1.0);
+ let (output_start, output_end) = if output_start <= output_end {
+  (output_start, output_end)
+ } else {
+  (output_end, output_start)
+ };
+ let t = ((value - input_start) / (input_end - input_start)).clamp(0.0, 1.0);
+ output_start + (output_end - output_start) * t
 }
 
 fn build_calibration(config: &AppConfig) -> NeutralPoseCalibration {
