@@ -1459,6 +1459,7 @@ struct Ets2RelativeMapper {
  accumulation_reset_enabled: bool,
  accumulation_reset_timeout_secs: f32,
  last_non_zero_input_at: Option<Instant>,
+ is_auto_returning: bool,
 }
 
 impl Ets2RelativeMapper {
@@ -1471,6 +1472,7 @@ impl Ets2RelativeMapper {
    accumulation_reset_enabled: false,
    accumulation_reset_timeout_secs: MappingConfig::default().ets2_relative_accumulation_reset_timeout_secs,
    last_non_zero_input_at: None,
+   is_auto_returning: false,
   }
  }
 
@@ -1480,9 +1482,16 @@ impl Ets2RelativeMapper {
  }
 
  fn set_accumulation_reset(&mut self, enabled: bool, timeout_secs: f32) {
+  let was_enabled = self.accumulation_reset_enabled;
   self.accumulation_reset_enabled = enabled;
   self.accumulation_reset_timeout_secs =
    timeout_secs.clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX);
+  if enabled && !was_enabled {
+   self.last_non_zero_input_at = Some(Instant::now());
+  } else if !enabled {
+   self.is_auto_returning = false;
+   self.last_non_zero_input_at = None;
+  }
  }
 
  fn reset(&mut self) {
@@ -1490,6 +1499,7 @@ impl Ets2RelativeMapper {
   self.pitch_deg = 0.0;
   self.last_update_at = None;
   self.last_non_zero_input_at = None;
+  self.is_auto_returning = false;
  }
 
  fn update(&mut self, frame: OutputFrame) -> OutputFrame {
@@ -1505,23 +1515,32 @@ impl Ets2RelativeMapper {
    return OutputFrame::default();
   }
 
-  let has_input = frame.look_yaw_norm.abs() > f32::EPSILON || frame.look_pitch_norm.abs() > f32::EPSILON;
+  let has_input = frame.look_yaw_norm != 0.0 || frame.look_pitch_norm != 0.0;
+
   if has_input {
+   self.is_auto_returning = false;
    self.last_non_zero_input_at = Some(now);
+   self.yaw_deg =
+    (self.yaw_deg + frame.look_yaw_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs)
+     .clamp(-180.0, 180.0);
+   self.pitch_deg =
+    (self.pitch_deg + frame.look_pitch_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs)
+     .clamp(-180.0, 180.0);
+  } else if self.is_auto_returning {
+   let step = self.angular_velocity_deg_per_sec * elapsed_secs;
+   self.yaw_deg = if self.yaw_deg.abs() <= step { 0.0 } else { self.yaw_deg - self.yaw_deg.signum() * step };
+   self.pitch_deg = if self.pitch_deg.abs() <= step { 0.0 } else { self.pitch_deg - self.pitch_deg.signum() * step };
+   if self.yaw_deg == 0.0 && self.pitch_deg == 0.0 {
+    self.is_auto_returning = false;
+   }
   } else if self.accumulation_reset_enabled {
    if let Some(last_input_at) = self.last_non_zero_input_at {
     if now.duration_since(last_input_at).as_secs_f32() >= self.accumulation_reset_timeout_secs {
-     self.yaw_deg = 0.0;
-     self.pitch_deg = 0.0;
+     self.is_auto_returning = true;
      self.last_non_zero_input_at = None;
     }
    }
   }
-
-  self.yaw_deg =
-   (self.yaw_deg + frame.look_yaw_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
-  self.pitch_deg =
-   (self.pitch_deg + frame.look_pitch_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
 
   OutputFrame {
    look_yaw_norm: self.yaw_deg / 180.0,
