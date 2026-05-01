@@ -156,6 +156,7 @@ mod tests {
    look_pitch_norm: 1.0,
    confidence: 1.0,
    active: false,
+   ..OutputFrame::default()
   })
   .expect("map inactive frame");
 
@@ -174,6 +175,7 @@ mod tests {
     look_pitch_norm: 0.0,
     confidence: 0.0,
     active: true,
+    ..OutputFrame::default()
    })
    .expect("apply while disabled");
 

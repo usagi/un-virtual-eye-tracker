@@ -649,10 +649,13 @@ mod tests {
    OutputFrame {
     look_yaw_norm: 1.0,
     look_pitch_norm: -1.0,
+    look_yaw_norm_raw: 1.0,
+    look_pitch_norm_raw: -1.0,
     confidence: 1.0,
     active: false,
    },
    TruckSimResponse::default(),
+   true,
   );
 
   assert_eq!(command, TruckSimCommand::neutral());
@@ -672,19 +675,25 @@ mod tests {
    OutputFrame {
     look_yaw_norm: 1.0,
     look_pitch_norm: 0.0,
+    look_yaw_norm_raw: 1.0,
+    look_pitch_norm_raw: 0.0,
     confidence: 1.0,
     active: true,
    },
    response,
+   true,
   );
   let left = Ets2Backend::frame_to_command(
    OutputFrame {
     look_yaw_norm: -1.0,
     look_pitch_norm: 0.0,
+    look_yaw_norm_raw: -1.0,
+    look_pitch_norm_raw: 0.0,
     confidence: 1.0,
     active: true,
    },
    response,
+   true,
   );
 
   assert!(right.look_back_right);
@@ -724,7 +733,8 @@ mod tests {
 
  #[test]
  fn command_to_freetrack_pose_respects_sign_and_range() {
-  let pose = Ets2Backend::command_to_freetrack_pose(TruckSimCommand {
+  let backend = Ets2Backend::default();
+  let pose = backend.command_to_freetrack_pose(TruckSimCommand {
    camera_yaw: 1.0,
    camera_pitch: -1.0,
    look_back_left: false,
@@ -740,13 +750,14 @@ mod tests {
 
  #[test]
  fn command_to_freetrack_pose_look_back_overrides_yaw() {
-  let left = Ets2Backend::command_to_freetrack_pose(TruckSimCommand {
+  let backend = Ets2Backend::default();
+  let left = backend.command_to_freetrack_pose(TruckSimCommand {
    camera_yaw: 0.0,
    camera_pitch: 0.0,
    look_back_left: true,
    look_back_right: false,
   });
-  let right = Ets2Backend::command_to_freetrack_pose(TruckSimCommand {
+  let right = backend.command_to_freetrack_pose(TruckSimCommand {
    camera_yaw: 0.0,
    camera_pitch: 0.0,
    look_back_left: false,

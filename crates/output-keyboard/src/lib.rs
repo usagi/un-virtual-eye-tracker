@@ -316,6 +316,7 @@ mod tests {
    look_pitch_norm: -0.7,
    confidence: 1.0,
    active: true,
+   ..OutputFrame::default()
   });
 
   assert_eq!(next_x, AxisState::Positive);
@@ -347,6 +348,7 @@ mod tests {
    look_pitch_norm: 0.9,
    confidence: 0.0,
    active: false,
+   ..OutputFrame::default()
   });
 
   assert_eq!(next_x, AxisState::Neutral);

@@ -143,6 +143,7 @@ mod tests {
     look_pitch_norm: 1.0,
     confidence: 1.0,
     active: false,
+    ..OutputFrame::default()
    },
    20.0,
    30,
@@ -159,6 +160,7 @@ mod tests {
     look_pitch_norm: -0.25,
     confidence: 1.0,
     active: true,
+    ..OutputFrame::default()
    },
    20.0,
    30,
@@ -175,6 +177,7 @@ mod tests {
     look_pitch_norm: -0.01,
     confidence: 1.0,
     active: true,
+    ..OutputFrame::default()
    },
    20.0,
    30,
@@ -191,6 +194,7 @@ mod tests {
     look_pitch_norm: -1.0,
     confidence: 1.0,
     active: true,
+    ..OutputFrame::default()
    },
    200.0,
    25,
@@ -211,6 +215,7 @@ mod tests {
     look_pitch_norm: 1.0,
     confidence: 1.0,
     active: true,
+    ..OutputFrame::default()
    },
    backend.speed_scale,
    backend.max_delta_per_tick,
