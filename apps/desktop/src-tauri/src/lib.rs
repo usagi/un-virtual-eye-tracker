@@ -1145,6 +1145,7 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   ets2_relative_mapper.set_accumulation_reset(
    active_mapping.ets2_relative_accumulation_reset_enabled,
    active_mapping.ets2_relative_accumulation_reset_timeout_secs,
+   Instant::now(),
   );
   let mut frame_stabilizer = TrackingFrameStabilizer::new(config.input_filter.spike_rejection_enabled);
   let mut calibration = build_calibration(&config);
@@ -1237,7 +1238,11 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    {
     active_mapping.ets2_relative_accumulation_reset_enabled = desired.ets2_relative_accumulation_reset_enabled;
     active_mapping.ets2_relative_accumulation_reset_timeout_secs = desired_reset_timeout;
-    ets2_relative_mapper.set_accumulation_reset(desired.ets2_relative_accumulation_reset_enabled, desired_reset_timeout);
+    ets2_relative_mapper.set_accumulation_reset(
+     desired.ets2_relative_accumulation_reset_enabled,
+     desired_reset_timeout,
+     Instant::now(),
+    );
    }
    if active_mapping.invert_output_yaw != desired.invert_output_yaw {
     active_mapping.invert_output_yaw = desired.invert_output_yaw;
@@ -1486,7 +1491,7 @@ impl Ets2RelativeMapper {
    angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
  }
 
- fn set_accumulation_reset(&mut self, enabled: bool, timeout_secs: f32) {
+ fn set_accumulation_reset(&mut self, enabled: bool, timeout_secs: f32, now: Instant) {
   let was_enabled = self.accumulation_reset_enabled;
   self.accumulation_reset_enabled = enabled;
   self.accumulation_reset_timeout_secs = timeout_secs.clamp(
@@ -1494,7 +1499,7 @@ impl Ets2RelativeMapper {
    ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX,
   );
   if enabled && !was_enabled {
-   self.last_non_zero_input_at = Some(Instant::now());
+   self.last_non_zero_input_at = Some(now);
   } else if !enabled {
    self.is_auto_returning = false;
    self.last_non_zero_input_at = None;
@@ -2103,20 +2108,21 @@ mod tests {
 
  #[test]
  fn ets2_relative_auto_return_moves_toward_center_smoothly() {
+  const SIMULATED_TIME_ELAPSED: Duration = Duration::from_millis(100);
   let now = Instant::now();
   let mut mapper = Ets2RelativeMapper::new(120.0);
-  mapper.set_accumulation_reset(true, 0.05);
+  mapper.set_accumulation_reset(true, 0.05, now);
   mapper.yaw_deg = 60.0;
   mapper.pitch_deg = -30.0;
-  mapper.last_update_at = Some(now - Duration::from_millis(100));
-  mapper.last_non_zero_input_at = Some(now - Duration::from_millis(100));
+  mapper.last_update_at = Some(now - SIMULATED_TIME_ELAPSED);
+  mapper.last_non_zero_input_at = Some(now - SIMULATED_TIME_ELAPSED);
 
   let first_idle = mapper.update(active_frame(0.0, 0.0));
   assert_eq!(first_idle.look_yaw_norm, 60.0 / 180.0);
   assert_eq!(first_idle.look_pitch_norm, -30.0 / 180.0);
   assert!(mapper.is_auto_returning);
 
-  mapper.last_update_at = Some(Instant::now() - Duration::from_millis(100));
+  mapper.last_update_at = Some(Instant::now() - SIMULATED_TIME_ELAPSED);
   let returning = mapper.update(active_frame(0.0, 0.0));
   assert!(returning.look_yaw_norm > 0.0);
   assert!(returning.look_yaw_norm < 60.0 / 180.0);
@@ -2126,11 +2132,13 @@ mod tests {
 
  #[test]
  fn ets2_relative_auto_return_is_cancelled_by_input() {
+  const SIMULATED_TIME_ELAPSED: Duration = Duration::from_millis(100);
+  let now = Instant::now();
   let mut mapper = Ets2RelativeMapper::new(120.0);
-  mapper.set_accumulation_reset(true, 0.05);
+  mapper.set_accumulation_reset(true, 0.05, now);
   mapper.yaw_deg = 30.0;
   mapper.is_auto_returning = true;
-  mapper.last_update_at = Some(Instant::now() - Duration::from_millis(100));
+  mapper.last_update_at = Some(now - SIMULATED_TIME_ELAPSED);
 
   let output = mapper.update(active_frame(0.5, 0.0));
 
@@ -2141,11 +2149,13 @@ mod tests {
 
  #[test]
  fn enabling_auto_return_starts_a_fresh_delay() {
+  const SIMULATED_TIME_ELAPSED: Duration = Duration::from_millis(100);
+  let now = Instant::now();
   let mut mapper = Ets2RelativeMapper::new(120.0);
   mapper.yaw_deg = 30.0;
-  mapper.last_update_at = Some(Instant::now() - Duration::from_millis(100));
+  mapper.last_update_at = Some(now - SIMULATED_TIME_ELAPSED);
 
-  mapper.set_accumulation_reset(true, 1.5);
+  mapper.set_accumulation_reset(true, 1.5, now);
   let output = mapper.update(active_frame(0.0, 0.0));
 
   assert_eq!(output.look_yaw_norm, 30.0 / 180.0);
