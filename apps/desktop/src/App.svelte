@@ -13,6 +13,7 @@
     setOutputAxisRanges,
     setOutputAxisInversion,
     setEts2RelativeAngularVelocity,
+    setEts2RelativeAccumulationReset,
     setOutputClutch,
     setOutputClutchHotkey,
     setOutputClutchHotkeyMode,
@@ -97,6 +98,8 @@
     pitchPosOutputRangeStart: 0,
     pitchNegOutputRangeStart: 0,
     ets2RelativeAngularVelocityDegPerSec: 120,
+    ets2RelativeAccumulationResetEnabled: false,
+    ets2RelativeAccumulationResetTimeoutSecs: 1.5,
     invertOutputYaw: false,
     invertOutputPitch: false,
     spikeRejectionEnabled: false,
@@ -150,6 +153,9 @@
   const ETS2_RELATIVE_ANGULAR_VELOCITY_MIN = 1;
   const ETS2_RELATIVE_ANGULAR_VELOCITY_MAX = 720;
   const ETS2_RELATIVE_ANGULAR_VELOCITY_STEP = 1;
+  const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN = 0.05;
+  const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX = 10.0;
+  const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_STEP = 0.05;
 
   let snapshot: RuntimeSnapshot = EMPTY_SNAPSHOT;
   let logs: UiLogEntry[] = [];
@@ -199,6 +205,8 @@
   let outputEasingEnabledDraft = true;
   let outputEasingAlphaDraft = 0.18;
   let ets2RelativeAngularVelocityDraft = 120;
+  let ets2RelativeAccumulationResetEnabledDraft = false;
+  let ets2RelativeAccumulationResetTimeoutSecsDraft = 1.5;
   let outputEasingLastEditAt = 0;
   let outputEasingApplyTimer: number | undefined;
 
@@ -361,6 +369,13 @@
     return Math.min(
       ETS2_RELATIVE_ANGULAR_VELOCITY_MAX,
       Math.max(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, value),
+    );
+  }
+
+  function clampEts2RelativeAccumulationResetTimeout(value: number): number {
+    return Math.min(
+      ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX,
+      Math.max(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, value),
     );
   }
 
@@ -643,6 +658,10 @@
         outputEasingAlphaDraft = latest.outputEasingAlpha;
         ets2RelativeAngularVelocityDraft =
           latest.ets2RelativeAngularVelocityDegPerSec;
+        ets2RelativeAccumulationResetEnabledDraft =
+          latest.ets2RelativeAccumulationResetEnabled;
+        ets2RelativeAccumulationResetTimeoutSecsDraft =
+          latest.ets2RelativeAccumulationResetTimeoutSecs;
       }
 
       if (!previousSnapshot.inputConnected && latest.inputConnected) {
@@ -821,6 +840,14 @@
           ets2RelativeAngularVelocityDraft,
         );
         await setEts2RelativeAngularVelocity(ets2RelativeAngularVelocityDraft);
+        ets2RelativeAccumulationResetTimeoutSecsDraft =
+          clampEts2RelativeAccumulationResetTimeout(
+            ets2RelativeAccumulationResetTimeoutSecsDraft,
+          );
+        await setEts2RelativeAccumulationReset(
+          ets2RelativeAccumulationResetEnabledDraft,
+          ets2RelativeAccumulationResetTimeoutSecsDraft,
+        );
       }
     } catch (error) {
       const message = String(error);
@@ -916,6 +943,25 @@
     }
 
     ets2RelativeAngularVelocityDraft = clampEts2RelativeAngularVelocity(parsed);
+    queueOutputEasingApply();
+  }
+
+  function onEts2RelativeAccumulationResetEnabledToggle(event: Event) {
+    ets2RelativeAccumulationResetEnabledDraft = (
+      event.currentTarget as HTMLInputElement
+    ).checked;
+    outputEasingLastEditAt = Date.now();
+    queueOutputEasingApply();
+  }
+
+  function onEts2RelativeAccumulationResetTimeoutInput(event: Event) {
+    const parsed = Number((event.currentTarget as HTMLInputElement).value);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+
+    ets2RelativeAccumulationResetTimeoutSecsDraft =
+      clampEts2RelativeAccumulationResetTimeout(parsed);
     queueOutputEasingApply();
   }
 
@@ -2176,6 +2222,47 @@
             </div>
             <p class="axis-caption">
               {snapshot.ets2RelativeAngularVelocityDegPerSec.toFixed(0)} deg/sec
+            </p>
+            <label class="switch">
+              <input
+                type="checkbox"
+                checked={ets2RelativeAccumulationResetEnabledDraft}
+                disabled={snapshot.outputBackend !== "ets2_relative"}
+                on:change={onEts2RelativeAccumulationResetEnabledToggle}
+              />
+              <span>Accumulation reset</span>
+            </label>
+            <div class="axis-editor">
+              <span class="axis-field-label">Timeout</span>
+              <input
+                id="ets2-relative-accumulation-reset-timeout-range"
+                class="axis-slider"
+                type="range"
+                min={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN}
+                max={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX}
+                step={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_STEP}
+                value={ets2RelativeAccumulationResetTimeoutSecsDraft}
+                disabled={!ets2RelativeAccumulationResetEnabledDraft ||
+                  snapshot.outputBackend !== "ets2_relative"}
+                on:input={onEts2RelativeAccumulationResetTimeoutInput}
+              />
+              <input
+                id="ets2-relative-accumulation-reset-timeout-number"
+                class="axis-number"
+                type="number"
+                min={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN}
+                max={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX}
+                step={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_STEP}
+                value={ets2RelativeAccumulationResetTimeoutSecsDraft}
+                disabled={!ets2RelativeAccumulationResetEnabledDraft ||
+                  snapshot.outputBackend !== "ets2_relative"}
+                on:input={onEts2RelativeAccumulationResetTimeoutInput}
+              />
+            </div>
+            <p class="axis-caption">
+              {snapshot.ets2RelativeAccumulationResetEnabled
+                ? `積算リセット: ON (${snapshot.ets2RelativeAccumulationResetTimeoutSecs.toFixed(2)}s)`
+                : "積算リセット: OFF"}
             </p>
           </article>
         </div>

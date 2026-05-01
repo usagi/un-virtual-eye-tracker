@@ -46,6 +46,8 @@ export type RuntimeSnapshot = {
   pitchPosOutputRangeStart: number;
   pitchNegOutputRangeStart: number;
   ets2RelativeAngularVelocityDegPerSec: number;
+  ets2RelativeAccumulationResetEnabled: boolean;
+  ets2RelativeAccumulationResetTimeoutSecs: number;
   invertOutputYaw: boolean;
   invertOutputPitch: boolean;
   spikeRejectionEnabled: boolean;
@@ -109,6 +111,15 @@ export const setEts2RelativeAngularVelocity = (
 ) =>
   invokeRuntime<void>("set_ets2_relative_angular_velocity", {
     angularVelocityDegPerSec,
+  });
+
+export const setEts2RelativeAccumulationReset = (
+  enabled: boolean,
+  timeoutSecs: number,
+) =>
+  invokeRuntime<void>("set_ets2_relative_accumulation_reset", {
+    enabled,
+    timeoutSecs,
   });
 
 export const setOutputAxisInversion = (
