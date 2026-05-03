@@ -48,6 +48,7 @@ export type RuntimeSnapshot = {
   ets2RelativeAngularVelocityDegPerSec: number;
   ets2RelativeAccumulationResetEnabled: boolean;
   ets2RelativeAccumulationResetTimeoutSecs: number;
+  ets2RelativeAutoReturnAngularVelocityDegPerSec: number;
   invertOutputYaw: boolean;
   invertOutputPitch: boolean;
   spikeRejectionEnabled: boolean;
@@ -120,6 +121,13 @@ export const setEts2RelativeAccumulationReset = (
   invokeRuntime<void>("set_ets2_relative_accumulation_reset", {
     enabled,
     timeoutSecs,
+  });
+
+export const setEts2RelativeAutoReturnAngularVelocity = (
+  angularVelocityDegPerSec: number,
+) =>
+  invokeRuntime<void>("set_ets2_relative_auto_return_angular_velocity", {
+    angularVelocityDegPerSec,
   });
 
 export const setOutputAxisInversion = (
