@@ -102,7 +102,7 @@ Runtime bootstrap -> NPClient-compatible shim + TrackIR helper -> Game interop
 
 ## Release Packaging
 
-- Portable package generation is automated by `tools/make-release-package.ps1`.
+- Portable package generation is automated by `cargo xtask make-release-package` (see `xtask/`).
 - Output format is `unvet-<version>.zip`, built from `target/release` artifacts.
 - Compatibility artifacts in the package include `NPClient64.dll`, `NPClient.dll`, `TrackIR.exe`, and `unvet-uninstall-compatible-layers.exe`.
 
