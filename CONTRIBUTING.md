@@ -31,7 +31,7 @@ Run these before opening a pull request.
 ```powershell
 cargo fmt --all -- --check
 cargo test --workspace
-./tools/check-clean-room.ps1
+cargo xtask check-clean-room
 ```
 
 ```powershell
@@ -43,7 +43,7 @@ Optional package validation:
 
 ```powershell
 cd ..\..
-./tools/make-release-package.ps1
+cargo xtask make-release-package
 ```
 
 ## Pull Request Checklist

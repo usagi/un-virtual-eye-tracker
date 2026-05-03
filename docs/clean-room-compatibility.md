@@ -51,5 +51,5 @@ This policy is an engineering rule for contributors. It is not legal advice.
   - observation source,
   - assumptions made,
   - what was intentionally left unimplemented.
-- Run tools/check-clean-room.ps1 before submitting compatibility-related
+- Run `cargo xtask check-clean-room` before submitting compatibility-related
   changes.

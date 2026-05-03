@@ -30,8 +30,7 @@ jobs:
         run: npm ci
 
       - name: Build release package
-        shell: pwsh
-        run: ./tools/make-release-package.ps1
+        run: cargo xtask make-release-package
 
       - name: Upload release zip
         uses: actions/upload-artifact@v4

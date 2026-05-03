@@ -12,6 +12,7 @@ members = [
  "crates/output-keyboard",
  "crates/output",
  "crates/ui",
+ "xtask",
 ]
 default-members = ["apps/desktop/src-tauri"]
 resolver = "2"

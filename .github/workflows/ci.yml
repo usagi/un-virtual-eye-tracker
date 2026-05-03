@@ -41,8 +41,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Run clean-room policy check
-        shell: pwsh
-        run: ./tools/check-clean-room.ps1
+        run: cargo xtask check-clean-room
 
   desktop:
     name: Desktop Type Checks
