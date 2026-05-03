@@ -14,6 +14,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 - ETS2 / ATS Relative: the auto-return-to-center motion is no longer scaled to the full `Speed` value (which was much faster than the user's typical head-shake input speed). The auto-return now uses its own configurable angular velocity.
 
+## [1.4.0] - 2026-05-03
+
+### Changed
+
+- Release current desktop and CLI build as v1.4.0.
+
 ## [1.1.0] - 2026-04-25
 
 ### Added
