@@ -14,6 +14,7 @@
     setOutputAxisInversion,
     setEts2RelativeAngularVelocity,
     setEts2RelativeAccumulationReset,
+    setEts2RelativeAutoReturnAngularVelocity,
     setOutputClutch,
     setOutputClutchHotkey,
     setOutputClutchHotkeyMode,
@@ -100,6 +101,7 @@
     ets2RelativeAngularVelocityDegPerSec: 120,
     ets2RelativeAccumulationResetEnabled: false,
     ets2RelativeAccumulationResetTimeoutSecs: 1.5,
+    ets2RelativeAutoReturnAngularVelocityDegPerSec: 60,
     invertOutputYaw: false,
     invertOutputPitch: false,
     spikeRejectionEnabled: false,
@@ -207,6 +209,7 @@
   let ets2RelativeAngularVelocityDraft = 120;
   let ets2RelativeAccumulationResetEnabledDraft = false;
   let ets2RelativeAccumulationResetTimeoutSecsDraft = 1.5;
+  let ets2RelativeAutoReturnAngularVelocityDraft = 60;
   let outputSettingsLastEditAt = 0;
   let outputSettingsApplyTimer: number | undefined;
 
@@ -662,6 +665,8 @@
           latest.ets2RelativeAccumulationResetEnabled;
         ets2RelativeAccumulationResetTimeoutSecsDraft =
           latest.ets2RelativeAccumulationResetTimeoutSecs;
+        ets2RelativeAutoReturnAngularVelocityDraft =
+          latest.ets2RelativeAutoReturnAngularVelocityDegPerSec;
       }
 
       if (!previousSnapshot.inputConnected && latest.inputConnected) {
@@ -848,6 +853,13 @@
           ets2RelativeAccumulationResetEnabledDraft,
           ets2RelativeAccumulationResetTimeoutSecsDraft,
         );
+        ets2RelativeAutoReturnAngularVelocityDraft =
+          clampEts2RelativeAngularVelocity(
+            ets2RelativeAutoReturnAngularVelocityDraft,
+          );
+        await setEts2RelativeAutoReturnAngularVelocity(
+          ets2RelativeAutoReturnAngularVelocityDraft,
+        );
       }
     } catch (error) {
       const message = String(error);
@@ -962,6 +974,17 @@
 
     ets2RelativeAccumulationResetTimeoutSecsDraft =
       clampEts2RelativeAccumulationResetTimeout(parsed);
+    queueOutputSettingsApply();
+  }
+
+  function onEts2RelativeAutoReturnAngularVelocityInput(event: Event) {
+    const parsed = Number((event.currentTarget as HTMLInputElement).value);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+
+    ets2RelativeAutoReturnAngularVelocityDraft =
+      clampEts2RelativeAngularVelocity(parsed);
     queueOutputSettingsApply();
   }
 
@@ -2268,6 +2291,36 @@
                 {snapshot.ets2RelativeAccumulationResetEnabled
                   ? `自動センター復帰: ON (${snapshot.ets2RelativeAccumulationResetTimeoutSecs.toFixed(2)}s)`
                   : "自動センター復帰: OFF"}
+              </p>
+              <div class="axis-editor">
+                <span class="axis-field-label">Return speed</span>
+                <input
+                  id="ets2-relative-auto-return-angular-velocity-range"
+                  class="axis-slider"
+                  type="range"
+                  min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
+                  max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
+                  step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
+                  value={ets2RelativeAutoReturnAngularVelocityDraft}
+                  disabled={!ets2RelativeAccumulationResetEnabledDraft ||
+                    snapshot.outputBackend !== "ets2_relative"}
+                  on:input={onEts2RelativeAutoReturnAngularVelocityInput}
+                />
+                <input
+                  id="ets2-relative-auto-return-angular-velocity-number"
+                  class="axis-number"
+                  type="number"
+                  min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
+                  max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
+                  step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
+                  value={ets2RelativeAutoReturnAngularVelocityDraft}
+                  disabled={!ets2RelativeAccumulationResetEnabledDraft ||
+                    snapshot.outputBackend !== "ets2_relative"}
+                  on:input={onEts2RelativeAutoReturnAngularVelocityInput}
+                />
+              </div>
+              <p class="axis-caption">
+                {snapshot.ets2RelativeAutoReturnAngularVelocityDegPerSec.toFixed(0)} deg/sec
               </p>
             </div>
           </div>

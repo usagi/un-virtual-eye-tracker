@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Added
+
+- ETS2 / ATS Relative output backend now exposes a dedicated "Auto return speed" angular velocity setting that controls the speed at which the accumulated yaw/pitch are returned toward center when Auto return to center fires. The default is 60 deg/sec, slower than the regular Speed (120 deg/sec by default), avoiding the abrupt center-snap that could feel disorienting in v1.4.0.
+
+### Fixed
+
+- ETS2 / ATS Relative: the auto-return-to-center motion is no longer scaled to the full `Speed` value (which was much faster than the user's typical head-shake input speed). The auto-return now uses its own configurable angular velocity.
+
 ## [1.4.0] - 2026-05-03
 
 ### Changed

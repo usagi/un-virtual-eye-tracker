@@ -206,6 +206,7 @@ struct RuntimeSnapshot {
  ets2_relative_angular_velocity_deg_per_sec: f32,
  ets2_relative_accumulation_reset_enabled: bool,
  ets2_relative_accumulation_reset_timeout_secs: f32,
+ ets2_relative_auto_return_angular_velocity_deg_per_sec: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  spike_rejection_enabled: bool,
@@ -415,6 +416,14 @@ impl RuntimeSnapshot {
    } else {
     MappingConfig::default().ets2_relative_accumulation_reset_timeout_secs
    },
+   ets2_relative_auto_return_angular_velocity_deg_per_sec: if restore {
+    config
+     .mapping
+     .ets2_relative_auto_return_angular_velocity_deg_per_sec
+     .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX)
+   } else {
+    MappingConfig::default().ets2_relative_auto_return_angular_velocity_deg_per_sec
+   },
    spike_rejection_enabled: if restore {
     config.input_filter.spike_rejection_enabled
    } else {
@@ -474,6 +483,7 @@ struct RuntimeShared {
  desired_ets2_relative_angular_velocity_deg_per_sec: f32,
  desired_ets2_relative_accumulation_reset_enabled: bool,
  desired_ets2_relative_accumulation_reset_timeout_secs: f32,
+ desired_ets2_relative_auto_return_angular_velocity_deg_per_sec: f32,
  desired_invert_output_yaw: bool,
  desired_invert_output_pitch: bool,
  desired_spike_rejection_enabled: bool,
@@ -527,6 +537,7 @@ impl RuntimeState {
     desired_ets2_relative_angular_velocity_deg_per_sec: snapshot.ets2_relative_angular_velocity_deg_per_sec,
     desired_ets2_relative_accumulation_reset_enabled: snapshot.ets2_relative_accumulation_reset_enabled,
     desired_ets2_relative_accumulation_reset_timeout_secs: snapshot.ets2_relative_accumulation_reset_timeout_secs,
+    desired_ets2_relative_auto_return_angular_velocity_deg_per_sec: snapshot.ets2_relative_auto_return_angular_velocity_deg_per_sec,
     desired_invert_output_yaw: snapshot.invert_output_yaw,
     desired_invert_output_pitch: snapshot.invert_output_pitch,
     desired_spike_rejection_enabled: snapshot.spike_rejection_enabled,
@@ -571,6 +582,7 @@ struct RuntimeDesired {
  ets2_relative_angular_velocity_deg_per_sec: f32,
  ets2_relative_accumulation_reset_enabled: bool,
  ets2_relative_accumulation_reset_timeout_secs: f32,
+ ets2_relative_auto_return_angular_velocity_deg_per_sec: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  spike_rejection_enabled: bool,
@@ -726,6 +738,19 @@ fn set_ets2_relative_angular_velocity(angular_velocity_deg_per_sec: f32, state: 
  let mut guard = state.shared.lock().expect("runtime state lock");
  guard.desired_ets2_relative_angular_velocity_deg_per_sec = clamped_velocity;
  guard.snapshot.ets2_relative_angular_velocity_deg_per_sec = clamped_velocity;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+}
+
+#[tauri::command]
+fn set_ets2_relative_auto_return_angular_velocity(angular_velocity_deg_per_sec: f32, state: State<RuntimeState>) {
+ let clamped_velocity = angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_ets2_relative_auto_return_angular_velocity_deg_per_sec = clamped_velocity;
+ guard.snapshot.ets2_relative_auto_return_angular_velocity_deg_per_sec = clamped_velocity;
  guard.snapshot.updated_at_ms = now_millis();
  drop(guard);
 
@@ -929,6 +954,7 @@ pub fn run() {
    set_output_axis_ranges,
    set_ets2_relative_angular_velocity,
    set_ets2_relative_accumulation_reset,
+   set_ets2_relative_auto_return_angular_velocity,
    set_output_axis_inversion,
    set_output_easing,
    set_paused,
@@ -1137,11 +1163,17 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN,
    ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX,
   );
+  active_mapping.ets2_relative_auto_return_angular_velocity_deg_per_sec = active_mapping
+   .ets2_relative_auto_return_angular_velocity_deg_per_sec
+   .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
   active_mapping.smoothing_alpha = active_mapping
    .smoothing_alpha
    .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
   let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
   let mut ets2_relative_mapper = Ets2RelativeMapper::new(active_mapping.ets2_relative_angular_velocity_deg_per_sec);
+  ets2_relative_mapper.set_auto_return_angular_velocity_deg_per_sec(
+   active_mapping.ets2_relative_auto_return_angular_velocity_deg_per_sec,
+  );
   ets2_relative_mapper.set_accumulation_reset(
    active_mapping.ets2_relative_accumulation_reset_enabled,
    active_mapping.ets2_relative_accumulation_reset_timeout_secs,
@@ -1228,6 +1260,13 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    if (active_mapping.ets2_relative_angular_velocity_deg_per_sec - desired_relative_velocity).abs() > f32::EPSILON {
     active_mapping.ets2_relative_angular_velocity_deg_per_sec = desired_relative_velocity;
     ets2_relative_mapper.set_angular_velocity_deg_per_sec(desired_relative_velocity);
+   }
+   let desired_relative_auto_return_velocity = desired
+    .ets2_relative_auto_return_angular_velocity_deg_per_sec
+    .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+   if (active_mapping.ets2_relative_auto_return_angular_velocity_deg_per_sec - desired_relative_auto_return_velocity).abs() > f32::EPSILON {
+    active_mapping.ets2_relative_auto_return_angular_velocity_deg_per_sec = desired_relative_auto_return_velocity;
+    ets2_relative_mapper.set_auto_return_angular_velocity_deg_per_sec(desired_relative_auto_return_velocity);
    }
    let desired_reset_timeout = desired.ets2_relative_accumulation_reset_timeout_secs.clamp(
     ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN,
@@ -1465,6 +1504,7 @@ struct Ets2RelativeMapper {
  yaw_deg: f32,
  pitch_deg: f32,
  angular_velocity_deg_per_sec: f32,
+ auto_return_angular_velocity_deg_per_sec: f32,
  last_update_at: Option<Instant>,
  accumulation_reset_enabled: bool,
  accumulation_reset_timeout_secs: f32,
@@ -1474,13 +1514,17 @@ struct Ets2RelativeMapper {
 
 impl Ets2RelativeMapper {
  fn new(angular_velocity_deg_per_sec: f32) -> Self {
+  let default_mapping = MappingConfig::default();
   Self {
    yaw_deg: 0.0,
    pitch_deg: 0.0,
    angular_velocity_deg_per_sec: angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX),
+   auto_return_angular_velocity_deg_per_sec: default_mapping
+    .ets2_relative_auto_return_angular_velocity_deg_per_sec
+    .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX),
    last_update_at: None,
    accumulation_reset_enabled: false,
-   accumulation_reset_timeout_secs: MappingConfig::default().ets2_relative_accumulation_reset_timeout_secs,
+   accumulation_reset_timeout_secs: default_mapping.ets2_relative_accumulation_reset_timeout_secs,
    last_non_zero_input_at: None,
    is_auto_returning: false,
   }
@@ -1488,6 +1532,11 @@ impl Ets2RelativeMapper {
 
  fn set_angular_velocity_deg_per_sec(&mut self, angular_velocity_deg_per_sec: f32) {
   self.angular_velocity_deg_per_sec =
+   angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+ }
+
+ fn set_auto_return_angular_velocity_deg_per_sec(&mut self, angular_velocity_deg_per_sec: f32) {
+  self.auto_return_angular_velocity_deg_per_sec =
    angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
  }
 
@@ -1537,7 +1586,7 @@ impl Ets2RelativeMapper {
    self.pitch_deg =
     (self.pitch_deg + frame.look_pitch_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
   } else if self.is_auto_returning {
-   let step = self.angular_velocity_deg_per_sec * elapsed_secs;
+   let step = self.auto_return_angular_velocity_deg_per_sec * elapsed_secs;
    self.yaw_deg = if self.yaw_deg.abs() <= step {
     0.0
    } else {
@@ -1605,6 +1654,7 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
   ets2_relative_angular_velocity_deg_per_sec: guard.desired_ets2_relative_angular_velocity_deg_per_sec,
   ets2_relative_accumulation_reset_enabled: guard.desired_ets2_relative_accumulation_reset_enabled,
   ets2_relative_accumulation_reset_timeout_secs: guard.desired_ets2_relative_accumulation_reset_timeout_secs,
+  ets2_relative_auto_return_angular_velocity_deg_per_sec: guard.desired_ets2_relative_auto_return_angular_velocity_deg_per_sec,
   invert_output_yaw: guard.desired_invert_output_yaw,
   invert_output_pitch: guard.desired_invert_output_pitch,
   spike_rejection_enabled: guard.desired_spike_rejection_enabled,
@@ -1749,6 +1799,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   ets2_relative_angular_velocity_deg_per_sec,
   ets2_relative_accumulation_reset_enabled,
   ets2_relative_accumulation_reset_timeout_secs,
+  ets2_relative_auto_return_angular_velocity_deg_per_sec,
   invert_output_yaw,
   invert_output_pitch,
   spike_rejection_enabled,
@@ -1787,6 +1838,7 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.snapshot.ets2_relative_angular_velocity_deg_per_sec,
    guard.snapshot.ets2_relative_accumulation_reset_enabled,
    guard.snapshot.ets2_relative_accumulation_reset_timeout_secs,
+   guard.snapshot.ets2_relative_auto_return_angular_velocity_deg_per_sec,
    guard.snapshot.invert_output_yaw,
    guard.snapshot.invert_output_pitch,
    guard.snapshot.spike_rejection_enabled,
@@ -1834,6 +1886,8 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN,
   ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX,
  );
+ config.mapping.ets2_relative_auto_return_angular_velocity_deg_per_sec = ets2_relative_auto_return_angular_velocity_deg_per_sec
+  .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
  config.mapping.invert_output_yaw = invert_output_yaw;
  config.mapping.invert_output_pitch = invert_output_pitch;
  config.input_filter.spike_rejection_enabled = spike_rejection_enabled;
@@ -2160,5 +2214,36 @@ mod tests {
 
   assert_eq!(output.look_yaw_norm, 30.0 / 180.0);
   assert!(!mapper.is_auto_returning);
+ }
+
+ #[test]
+ fn ets2_relative_auto_return_uses_dedicated_angular_velocity() {
+  // Regular speed is 240 deg/sec (i.e. fast head-shake), auto-return is 30 deg/sec.
+  // After 100 ms the yaw must move by ~3 deg (using auto-return velocity), not ~24 deg
+  // (which would be the case if the regular velocity were used).
+  const SIMULATED_TIME_ELAPSED: Duration = Duration::from_millis(100);
+  let now = Instant::now();
+  let mut mapper = Ets2RelativeMapper::new(240.0);
+  mapper.set_auto_return_angular_velocity_deg_per_sec(30.0);
+  mapper.set_accumulation_reset(true, 0.05, now);
+  mapper.yaw_deg = 60.0;
+  mapper.last_update_at = Some(now - SIMULATED_TIME_ELAPSED);
+  mapper.last_non_zero_input_at = Some(now - SIMULATED_TIME_ELAPSED);
+
+  // First idle frame: timeout elapses, auto-return engages but no movement yet.
+  let _ = mapper.update(active_frame(0.0, 0.0));
+  assert!(mapper.is_auto_returning);
+  assert_eq!(mapper.yaw_deg, 60.0);
+
+  // Next idle frame: yaw moves by auto-return velocity * elapsed (~3 deg).
+  mapper.last_update_at = Some(Instant::now() - SIMULATED_TIME_ELAPSED);
+  let _ = mapper.update(active_frame(0.0, 0.0));
+  let delta = 60.0 - mapper.yaw_deg;
+  assert!(
+   (delta - 3.0).abs() < 0.5,
+   "expected ~3 deg auto-return step (30 deg/sec * 0.1 s), got {delta}"
+  );
+  // Sanity: must not have used the regular 240 deg/sec velocity.
+  assert!(delta < 12.0, "auto-return must not use the regular angular velocity");
  }
 }
