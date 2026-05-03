@@ -410,6 +410,8 @@ mod tests {
   OutputFrame {
    look_yaw_norm: 0.7,
    look_pitch_norm: -0.4,
+   look_yaw_norm_raw: 0.7,
+   look_pitch_norm_raw: -0.4,
    confidence: 1.0,
    active: true,
   }
