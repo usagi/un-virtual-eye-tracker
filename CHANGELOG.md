@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-03
+
+### Changed
+
+- Release current desktop and CLI build as v1.4.0.
+
 ## [1.1.0] - 2026-04-25
 
 ### Added
