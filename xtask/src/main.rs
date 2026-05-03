@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod bump_version;
 mod check_clean_room;
 mod make_release_package;
 
@@ -15,6 +16,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+ /// Bump repository package versions in manifests and lockfiles.
+ BumpVersion {
+  /// New SemVer version (for example, 1.4.1).
+  version: String,
+  /// Repository root (defaults to the workspace root).
+  #[arg(long, value_name = "PATH")]
+  repo_root: Option<PathBuf>,
+  /// Show the files that would be updated without writing changes.
+  #[arg(long)]
+  dry_run: bool,
+  /// Create git tag v<VERSION> and push tags after verifying no version files need updates.
+  #[arg(long)]
+  tag: bool,
+ },
  /// Scan tracked source directories for clean-room policy violations.
  CheckCleanRoom {
   /// Repository root (defaults to the workspace root).
@@ -52,6 +67,20 @@ fn workspace_root() -> PathBuf {
 fn main() -> Result<()> {
  let cli = Cli::parse();
  match cli.command {
+  Command::BumpVersion {
+   version,
+   repo_root,
+   dry_run,
+   tag,
+  } => {
+   let root = repo_root.unwrap_or_else(workspace_root);
+   bump_version::run(bump_version::Options {
+    repo_root: root,
+    version,
+    dry_run,
+    tag,
+   })
+  },
   Command::CheckCleanRoom { repo_root } => {
    let root = repo_root.unwrap_or_else(workspace_root);
    check_clean_room::run(&root)
