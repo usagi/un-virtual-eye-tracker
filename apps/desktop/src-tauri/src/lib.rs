@@ -45,6 +45,8 @@ const OUTPUT_EASING_ALPHA_MIN: f32 = 0.01;
 const OUTPUT_EASING_ALPHA_MAX: f32 = 1.0;
 const ETS2_RELATIVE_ANGULAR_VELOCITY_MIN: f32 = 1.0;
 const ETS2_RELATIVE_ANGULAR_VELOCITY_MAX: f32 = 720.0;
+const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN: f32 = 0.05;
+const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX: f32 = 10.0;
 
 #[cfg(target_os = "windows")]
 const TRACKIR_DUMMY_PROCESS_NAME: &str = "TrackIR.exe";
@@ -202,6 +204,8 @@ struct RuntimeSnapshot {
  pitch_pos_output_range_start: f32,
  pitch_neg_output_range_start: f32,
  ets2_relative_angular_velocity_deg_per_sec: f32,
+ ets2_relative_accumulation_reset_enabled: bool,
+ ets2_relative_accumulation_reset_timeout_secs: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  spike_rejection_enabled: bool,
@@ -398,6 +402,19 @@ impl RuntimeSnapshot {
    } else {
     MappingConfig::default().ets2_relative_angular_velocity_deg_per_sec
    },
+   ets2_relative_accumulation_reset_enabled: if restore {
+    config.mapping.ets2_relative_accumulation_reset_enabled
+   } else {
+    false
+   },
+   ets2_relative_accumulation_reset_timeout_secs: if restore {
+    config
+     .mapping
+     .ets2_relative_accumulation_reset_timeout_secs
+     .clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX)
+   } else {
+    MappingConfig::default().ets2_relative_accumulation_reset_timeout_secs
+   },
    spike_rejection_enabled: if restore {
     config.input_filter.spike_rejection_enabled
    } else {
@@ -455,6 +472,8 @@ struct RuntimeShared {
  desired_pitch_pos_output_range_start: f32,
  desired_pitch_neg_output_range_start: f32,
  desired_ets2_relative_angular_velocity_deg_per_sec: f32,
+ desired_ets2_relative_accumulation_reset_enabled: bool,
+ desired_ets2_relative_accumulation_reset_timeout_secs: f32,
  desired_invert_output_yaw: bool,
  desired_invert_output_pitch: bool,
  desired_spike_rejection_enabled: bool,
@@ -506,6 +525,8 @@ impl RuntimeState {
     desired_pitch_pos_output_range_start: snapshot.pitch_pos_output_range_start,
     desired_pitch_neg_output_range_start: snapshot.pitch_neg_output_range_start,
     desired_ets2_relative_angular_velocity_deg_per_sec: snapshot.ets2_relative_angular_velocity_deg_per_sec,
+    desired_ets2_relative_accumulation_reset_enabled: snapshot.ets2_relative_accumulation_reset_enabled,
+    desired_ets2_relative_accumulation_reset_timeout_secs: snapshot.ets2_relative_accumulation_reset_timeout_secs,
     desired_invert_output_yaw: snapshot.invert_output_yaw,
     desired_invert_output_pitch: snapshot.invert_output_pitch,
     desired_spike_rejection_enabled: snapshot.spike_rejection_enabled,
@@ -548,6 +569,8 @@ struct RuntimeDesired {
  pitch_pos_output_range_start: f32,
  pitch_neg_output_range_start: f32,
  ets2_relative_angular_velocity_deg_per_sec: f32,
+ ets2_relative_accumulation_reset_enabled: bool,
+ ets2_relative_accumulation_reset_timeout_secs: f32,
  invert_output_yaw: bool,
  invert_output_pitch: bool,
  spike_rejection_enabled: bool,
@@ -703,6 +726,21 @@ fn set_ets2_relative_angular_velocity(angular_velocity_deg_per_sec: f32, state: 
  let mut guard = state.shared.lock().expect("runtime state lock");
  guard.desired_ets2_relative_angular_velocity_deg_per_sec = clamped_velocity;
  guard.snapshot.ets2_relative_angular_velocity_deg_per_sec = clamped_velocity;
+ guard.snapshot.updated_at_ms = now_millis();
+ drop(guard);
+
+ persist_session_settings_if_enabled_or_set_error(state.inner());
+}
+
+#[tauri::command]
+fn set_ets2_relative_accumulation_reset(enabled: bool, timeout_secs: f32, state: State<RuntimeState>) {
+ let clamped_timeout = timeout_secs.clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX);
+
+ let mut guard = state.shared.lock().expect("runtime state lock");
+ guard.desired_ets2_relative_accumulation_reset_enabled = enabled;
+ guard.desired_ets2_relative_accumulation_reset_timeout_secs = clamped_timeout;
+ guard.snapshot.ets2_relative_accumulation_reset_enabled = enabled;
+ guard.snapshot.ets2_relative_accumulation_reset_timeout_secs = clamped_timeout;
  guard.snapshot.updated_at_ms = now_millis();
  drop(guard);
 
@@ -887,6 +925,7 @@ pub fn run() {
    set_persist_session_settings,
    set_output_axis_ranges,
    set_ets2_relative_angular_velocity,
+   set_ets2_relative_accumulation_reset,
    set_output_axis_inversion,
    set_output_easing,
    set_paused,
@@ -1091,11 +1130,18 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
   active_mapping.ets2_relative_angular_velocity_deg_per_sec = active_mapping
    .ets2_relative_angular_velocity_deg_per_sec
    .clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+  active_mapping.ets2_relative_accumulation_reset_timeout_secs = active_mapping
+   .ets2_relative_accumulation_reset_timeout_secs
+   .clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX);
   active_mapping.smoothing_alpha = active_mapping
    .smoothing_alpha
    .clamp(OUTPUT_EASING_ALPHA_MIN, OUTPUT_EASING_ALPHA_MAX);
   let mut frame_smoother = OutputFrameSmoother::new(active_mapping.smoothing_alpha);
   let mut ets2_relative_mapper = Ets2RelativeMapper::new(active_mapping.ets2_relative_angular_velocity_deg_per_sec);
+  ets2_relative_mapper.set_accumulation_reset(
+   active_mapping.ets2_relative_accumulation_reset_enabled,
+   active_mapping.ets2_relative_accumulation_reset_timeout_secs,
+  );
   let mut frame_stabilizer = TrackingFrameStabilizer::new(config.input_filter.spike_rejection_enabled);
   let mut calibration = build_calibration(&config);
 
@@ -1177,6 +1223,16 @@ fn spawn_runtime_loop(shared: Arc<Mutex<RuntimeShared>>, config: AppConfig) {
    if (active_mapping.ets2_relative_angular_velocity_deg_per_sec - desired_relative_velocity).abs() > f32::EPSILON {
     active_mapping.ets2_relative_angular_velocity_deg_per_sec = desired_relative_velocity;
     ets2_relative_mapper.set_angular_velocity_deg_per_sec(desired_relative_velocity);
+   }
+   let desired_reset_timeout = desired
+    .ets2_relative_accumulation_reset_timeout_secs
+    .clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX);
+   if active_mapping.ets2_relative_accumulation_reset_enabled != desired.ets2_relative_accumulation_reset_enabled
+    || (active_mapping.ets2_relative_accumulation_reset_timeout_secs - desired_reset_timeout).abs() > f32::EPSILON
+   {
+    active_mapping.ets2_relative_accumulation_reset_enabled = desired.ets2_relative_accumulation_reset_enabled;
+    active_mapping.ets2_relative_accumulation_reset_timeout_secs = desired_reset_timeout;
+    ets2_relative_mapper.set_accumulation_reset(desired.ets2_relative_accumulation_reset_enabled, desired_reset_timeout);
    }
    if active_mapping.invert_output_yaw != desired.invert_output_yaw {
     active_mapping.invert_output_yaw = desired.invert_output_yaw;
@@ -1400,6 +1456,10 @@ struct Ets2RelativeMapper {
  pitch_deg: f32,
  angular_velocity_deg_per_sec: f32,
  last_update_at: Option<Instant>,
+ accumulation_reset_enabled: bool,
+ accumulation_reset_timeout_secs: f32,
+ last_non_zero_input_at: Option<Instant>,
+ is_auto_returning: bool,
 }
 
 impl Ets2RelativeMapper {
@@ -1409,6 +1469,10 @@ impl Ets2RelativeMapper {
    pitch_deg: 0.0,
    angular_velocity_deg_per_sec: angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX),
    last_update_at: None,
+   accumulation_reset_enabled: false,
+   accumulation_reset_timeout_secs: MappingConfig::default().ets2_relative_accumulation_reset_timeout_secs,
+   last_non_zero_input_at: None,
+   is_auto_returning: false,
   }
  }
 
@@ -1417,10 +1481,25 @@ impl Ets2RelativeMapper {
    angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
  }
 
+ fn set_accumulation_reset(&mut self, enabled: bool, timeout_secs: f32) {
+  let was_enabled = self.accumulation_reset_enabled;
+  self.accumulation_reset_enabled = enabled;
+  self.accumulation_reset_timeout_secs =
+   timeout_secs.clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX);
+  if enabled && !was_enabled {
+   self.last_non_zero_input_at = Some(Instant::now());
+  } else if !enabled {
+   self.is_auto_returning = false;
+   self.last_non_zero_input_at = None;
+  }
+ }
+
  fn reset(&mut self) {
   self.yaw_deg = 0.0;
   self.pitch_deg = 0.0;
   self.last_update_at = None;
+  self.last_non_zero_input_at = None;
+  self.is_auto_returning = false;
  }
 
  fn update(&mut self, frame: OutputFrame) -> OutputFrame {
@@ -1436,10 +1515,32 @@ impl Ets2RelativeMapper {
    return OutputFrame::default();
   }
 
-  self.yaw_deg =
-   (self.yaw_deg + frame.look_yaw_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
-  self.pitch_deg =
-   (self.pitch_deg + frame.look_pitch_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs).clamp(-180.0, 180.0);
+  let has_input = frame.look_yaw_norm != 0.0 || frame.look_pitch_norm != 0.0;
+
+  if has_input {
+   self.is_auto_returning = false;
+   self.last_non_zero_input_at = Some(now);
+   self.yaw_deg =
+    (self.yaw_deg + frame.look_yaw_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs)
+     .clamp(-180.0, 180.0);
+   self.pitch_deg =
+    (self.pitch_deg + frame.look_pitch_norm.clamp(-1.0, 1.0) * self.angular_velocity_deg_per_sec * elapsed_secs)
+     .clamp(-180.0, 180.0);
+  } else if self.is_auto_returning {
+   let step = self.angular_velocity_deg_per_sec * elapsed_secs;
+   self.yaw_deg = if self.yaw_deg.abs() <= step { 0.0 } else { self.yaw_deg - self.yaw_deg.signum() * step };
+   self.pitch_deg = if self.pitch_deg.abs() <= step { 0.0 } else { self.pitch_deg - self.pitch_deg.signum() * step };
+   if self.yaw_deg == 0.0 && self.pitch_deg == 0.0 {
+    self.is_auto_returning = false;
+   }
+  } else if self.accumulation_reset_enabled {
+   if let Some(last_input_at) = self.last_non_zero_input_at {
+    if now.duration_since(last_input_at).as_secs_f32() >= self.accumulation_reset_timeout_secs {
+     self.is_auto_returning = true;
+     self.last_non_zero_input_at = None;
+    }
+   }
+  }
 
   OutputFrame {
    look_yaw_norm: self.yaw_deg / 180.0,
@@ -1484,6 +1585,8 @@ fn consume_desired(shared: &Arc<Mutex<RuntimeShared>>) -> RuntimeDesired {
   pitch_pos_output_range_start: guard.desired_pitch_pos_output_range_start,
   pitch_neg_output_range_start: guard.desired_pitch_neg_output_range_start,
   ets2_relative_angular_velocity_deg_per_sec: guard.desired_ets2_relative_angular_velocity_deg_per_sec,
+  ets2_relative_accumulation_reset_enabled: guard.desired_ets2_relative_accumulation_reset_enabled,
+  ets2_relative_accumulation_reset_timeout_secs: guard.desired_ets2_relative_accumulation_reset_timeout_secs,
   invert_output_yaw: guard.desired_invert_output_yaw,
   invert_output_pitch: guard.desired_invert_output_pitch,
   spike_rejection_enabled: guard.desired_spike_rejection_enabled,
@@ -1626,6 +1729,8 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
   pitch_pos_output_range_start,
   pitch_neg_output_range_start,
   ets2_relative_angular_velocity_deg_per_sec,
+  ets2_relative_accumulation_reset_enabled,
+  ets2_relative_accumulation_reset_timeout_secs,
   invert_output_yaw,
   invert_output_pitch,
   spike_rejection_enabled,
@@ -1662,6 +1767,8 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
    guard.snapshot.pitch_pos_output_range_start,
    guard.snapshot.pitch_neg_output_range_start,
    guard.snapshot.ets2_relative_angular_velocity_deg_per_sec,
+   guard.snapshot.ets2_relative_accumulation_reset_enabled,
+   guard.snapshot.ets2_relative_accumulation_reset_timeout_secs,
    guard.snapshot.invert_output_yaw,
    guard.snapshot.invert_output_pitch,
    guard.snapshot.spike_rejection_enabled,
@@ -1704,6 +1811,9 @@ fn persist_session_settings_if_enabled(state: &RuntimeState) -> Result<(), Strin
  config.mapping.pitch_neg_output_range_start = pitch_neg_output_range_start.clamp(AXIS_OUTPUT_RANGE_MIN, AXIS_OUTPUT_RANGE_MAX);
  config.mapping.ets2_relative_angular_velocity_deg_per_sec =
   ets2_relative_angular_velocity_deg_per_sec.clamp(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, ETS2_RELATIVE_ANGULAR_VELOCITY_MAX);
+ config.mapping.ets2_relative_accumulation_reset_enabled = ets2_relative_accumulation_reset_enabled;
+ config.mapping.ets2_relative_accumulation_reset_timeout_secs =
+  ets2_relative_accumulation_reset_timeout_secs.clamp(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX);
  config.mapping.invert_output_yaw = invert_output_yaw;
  config.mapping.invert_output_pitch = invert_output_pitch;
  config.input_filter.spike_rejection_enabled = spike_rejection_enabled;

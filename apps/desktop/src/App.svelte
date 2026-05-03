@@ -13,6 +13,7 @@
     setOutputAxisRanges,
     setOutputAxisInversion,
     setEts2RelativeAngularVelocity,
+    setEts2RelativeAccumulationReset,
     setOutputClutch,
     setOutputClutchHotkey,
     setOutputClutchHotkeyMode,
@@ -97,6 +98,8 @@
     pitchPosOutputRangeStart: 0,
     pitchNegOutputRangeStart: 0,
     ets2RelativeAngularVelocityDegPerSec: 120,
+    ets2RelativeAccumulationResetEnabled: false,
+    ets2RelativeAccumulationResetTimeoutSecs: 1.5,
     invertOutputYaw: false,
     invertOutputPitch: false,
     spikeRejectionEnabled: false,
@@ -150,6 +153,9 @@
   const ETS2_RELATIVE_ANGULAR_VELOCITY_MIN = 1;
   const ETS2_RELATIVE_ANGULAR_VELOCITY_MAX = 720;
   const ETS2_RELATIVE_ANGULAR_VELOCITY_STEP = 1;
+  const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN = 0.05;
+  const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX = 10.0;
+  const ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_STEP = 0.05;
 
   let snapshot: RuntimeSnapshot = EMPTY_SNAPSHOT;
   let logs: UiLogEntry[] = [];
@@ -199,8 +205,10 @@
   let outputEasingEnabledDraft = true;
   let outputEasingAlphaDraft = 0.18;
   let ets2RelativeAngularVelocityDraft = 120;
-  let outputEasingLastEditAt = 0;
-  let outputEasingApplyTimer: number | undefined;
+  let ets2RelativeAccumulationResetEnabledDraft = false;
+  let ets2RelativeAccumulationResetTimeoutSecsDraft = 1.5;
+  let outputSettingsLastEditAt = 0;
+  let outputSettingsApplyTimer: number | undefined;
 
   let poller: number | undefined;
   let copyFeedbackTimer: number | undefined;
@@ -361,6 +369,13 @@
     return Math.min(
       ETS2_RELATIVE_ANGULAR_VELOCITY_MAX,
       Math.max(ETS2_RELATIVE_ANGULAR_VELOCITY_MIN, value),
+    );
+  }
+
+  function clampEts2RelativeAccumulationResetTimeout(value: number): number {
+    return Math.min(
+      ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX,
+      Math.max(ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN, value),
     );
   }
 
@@ -635,7 +650,7 @@
         pitchNegOutputEndDraft = latest.pitchNegOutputMultiplier;
       }
 
-      if (Date.now() - outputEasingLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
+      if (Date.now() - outputSettingsLastEditAt > OUTPUT_EASING_SYNC_GRACE_MS) {
         invertYawDraft = latest.invertOutputYaw;
         invertPitchDraft = latest.invertOutputPitch;
         spikeRejectionEnabledDraft = latest.spikeRejectionEnabled;
@@ -643,6 +658,10 @@
         outputEasingAlphaDraft = latest.outputEasingAlpha;
         ets2RelativeAngularVelocityDraft =
           latest.ets2RelativeAngularVelocityDegPerSec;
+        ets2RelativeAccumulationResetEnabledDraft =
+          latest.ets2RelativeAccumulationResetEnabled;
+        ets2RelativeAccumulationResetTimeoutSecsDraft =
+          latest.ets2RelativeAccumulationResetTimeoutSecs;
       }
 
       if (!previousSnapshot.inputConnected && latest.inputConnected) {
@@ -809,7 +828,7 @@
     }
   }
 
-  async function applyOutputEasingLive() {
+  async function applyOutputMappingSettings() {
     const alpha = clampOutputEasingAlpha(outputEasingAlphaDraft);
     outputEasingAlphaDraft = alpha;
 
@@ -821,36 +840,44 @@
           ets2RelativeAngularVelocityDraft,
         );
         await setEts2RelativeAngularVelocity(ets2RelativeAngularVelocityDraft);
+        ets2RelativeAccumulationResetTimeoutSecsDraft =
+          clampEts2RelativeAccumulationResetTimeout(
+            ets2RelativeAccumulationResetTimeoutSecsDraft,
+          );
+        await setEts2RelativeAccumulationReset(
+          ets2RelativeAccumulationResetEnabledDraft,
+          ets2RelativeAccumulationResetTimeoutSecsDraft,
+        );
       }
     } catch (error) {
       const message = String(error);
       actionError = message;
-      pushLog("error", "ui", `Set output easing failed: ${message}`);
+      pushLog("error", "ui", `Set output mapping settings failed: ${message}`);
     }
   }
 
-  function queueOutputEasingApply() {
-    outputEasingLastEditAt = Date.now();
+  function queueOutputSettingsApply() {
+    outputSettingsLastEditAt = Date.now();
 
-    if (outputEasingApplyTimer !== undefined) {
-      window.clearTimeout(outputEasingApplyTimer);
+    if (outputSettingsApplyTimer !== undefined) {
+      window.clearTimeout(outputSettingsApplyTimer);
     }
 
-    outputEasingApplyTimer = window.setTimeout(() => {
-      outputEasingApplyTimer = undefined;
-      void applyOutputEasingLive();
+    outputSettingsApplyTimer = window.setTimeout(() => {
+      outputSettingsApplyTimer = undefined;
+      void applyOutputMappingSettings();
     }, OUTPUT_EASING_APPLY_DEBOUNCE_MS);
   }
 
   function onInvertYawToggle(event: Event) {
     invertYawDraft = (event.currentTarget as HTMLInputElement).checked;
-    outputEasingLastEditAt = Date.now();
+    outputSettingsLastEditAt = Date.now();
     void applyOutputAxisInversionLive();
   }
 
   function onInvertPitchToggle(event: Event) {
     invertPitchDraft = (event.currentTarget as HTMLInputElement).checked;
-    outputEasingLastEditAt = Date.now();
+    outputSettingsLastEditAt = Date.now();
     void applyOutputAxisInversionLive();
   }
 
@@ -870,7 +897,7 @@
   function onOutputEasingEnabledToggle(event: Event) {
     outputEasingEnabledDraft = (event.currentTarget as HTMLInputElement)
       .checked;
-    queueOutputEasingApply();
+    queueOutputSettingsApply();
   }
 
   function onOutputEasingAlphaInput(event: Event) {
@@ -880,7 +907,7 @@
     }
 
     outputEasingAlphaDraft = clampOutputEasingAlpha(parsed);
-    queueOutputEasingApply();
+    queueOutputSettingsApply();
   }
 
   function onAxisInputRangeInput(
@@ -916,7 +943,26 @@
     }
 
     ets2RelativeAngularVelocityDraft = clampEts2RelativeAngularVelocity(parsed);
-    queueOutputEasingApply();
+    queueOutputSettingsApply();
+  }
+
+  function onEts2RelativeAccumulationResetEnabledToggle(event: Event) {
+    ets2RelativeAccumulationResetEnabledDraft = (
+      event.currentTarget as HTMLInputElement
+    ).checked;
+    outputSettingsLastEditAt = Date.now();
+    queueOutputSettingsApply();
+  }
+
+  function onEts2RelativeAccumulationResetTimeoutInput(event: Event) {
+    const parsed = Number((event.currentTarget as HTMLInputElement).value);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+
+    ets2RelativeAccumulationResetTimeoutSecsDraft =
+      clampEts2RelativeAccumulationResetTimeout(parsed);
+    queueOutputSettingsApply();
   }
 
   function onLiveSendToggle(event: Event) {
@@ -1225,8 +1271,8 @@
       if (axisApplyTimer !== undefined) {
         window.clearTimeout(axisApplyTimer);
       }
-      if (outputEasingApplyTimer !== undefined) {
-        window.clearTimeout(outputEasingApplyTimer);
+      if (outputSettingsApplyTimer !== undefined) {
+        window.clearTimeout(outputSettingsApplyTimer);
       }
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
@@ -2146,39 +2192,86 @@
               )}（低いほど滑らか/遅い, 高いほど追従/速い）
             </p>
           </article>
-
-          <article class="axis-advanced-card">
-            <h3>ETS2 / ATS Relative</h3>
-            <div class="axis-editor">
-              <span class="axis-field-label">Speed</span>
-              <input
-                id="ets2-relative-angular-velocity-range"
-                class="axis-slider"
-                type="range"
-                min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
-                max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
-                step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
-                value={ets2RelativeAngularVelocityDraft}
-                disabled={snapshot.outputBackend !== "ets2_relative"}
-                on:input={onEts2RelativeAngularVelocityInput}
-              />
-              <input
-                id="ets2-relative-angular-velocity-number"
-                class="axis-number"
-                type="number"
-                min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
-                max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
-                step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
-                value={ets2RelativeAngularVelocityDraft}
-                disabled={snapshot.outputBackend !== "ets2_relative"}
-                on:input={onEts2RelativeAngularVelocityInput}
-              />
-            </div>
-            <p class="axis-caption">
-              {snapshot.ets2RelativeAngularVelocityDegPerSec.toFixed(0)} deg/sec
-            </p>
-          </article>
         </div>
+
+        <article class="axis-advanced-card">
+          <h3>ETS2 / ATS Relative</h3>
+          <div class="ets2-relative-grid">
+            <div>
+              <div class="axis-editor">
+                <span class="axis-field-label">Speed</span>
+                <input
+                  id="ets2-relative-angular-velocity-range"
+                  class="axis-slider"
+                  type="range"
+                  min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
+                  max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
+                  step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
+                  value={ets2RelativeAngularVelocityDraft}
+                  disabled={snapshot.outputBackend !== "ets2_relative"}
+                  on:input={onEts2RelativeAngularVelocityInput}
+                />
+                <input
+                  id="ets2-relative-angular-velocity-number"
+                  class="axis-number"
+                  type="number"
+                  min={ETS2_RELATIVE_ANGULAR_VELOCITY_MIN}
+                  max={ETS2_RELATIVE_ANGULAR_VELOCITY_MAX}
+                  step={ETS2_RELATIVE_ANGULAR_VELOCITY_STEP}
+                  value={ets2RelativeAngularVelocityDraft}
+                  disabled={snapshot.outputBackend !== "ets2_relative"}
+                  on:input={onEts2RelativeAngularVelocityInput}
+                />
+              </div>
+              <p class="axis-caption">
+                {snapshot.ets2RelativeAngularVelocityDegPerSec.toFixed(0)} deg/sec
+              </p>
+            </div>
+            <div>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  checked={ets2RelativeAccumulationResetEnabledDraft}
+                  disabled={snapshot.outputBackend !== "ets2_relative"}
+                  on:change={onEts2RelativeAccumulationResetEnabledToggle}
+                />
+                <span>Auto return to center</span>
+              </label>
+              <div class="axis-editor">
+                <span class="axis-field-label">Timeout</span>
+                <input
+                  id="ets2-relative-accumulation-reset-timeout-range"
+                  class="axis-slider"
+                  type="range"
+                  min={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN}
+                  max={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX}
+                  step={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_STEP}
+                  value={ets2RelativeAccumulationResetTimeoutSecsDraft}
+                  disabled={!ets2RelativeAccumulationResetEnabledDraft ||
+                    snapshot.outputBackend !== "ets2_relative"}
+                  on:input={onEts2RelativeAccumulationResetTimeoutInput}
+                />
+                <input
+                  id="ets2-relative-accumulation-reset-timeout-number"
+                  class="axis-number"
+                  type="number"
+                  min={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MIN}
+                  max={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_MAX}
+                  step={ETS2_RELATIVE_ACCUMULATION_RESET_TIMEOUT_STEP}
+                  value={ets2RelativeAccumulationResetTimeoutSecsDraft}
+                  disabled={!ets2RelativeAccumulationResetEnabledDraft ||
+                    snapshot.outputBackend !== "ets2_relative"}
+                  on:input={onEts2RelativeAccumulationResetTimeoutInput}
+                />
+              </div>
+              <p class="axis-caption">
+                {snapshot.ets2RelativeAccumulationResetEnabled
+                  ? `自動センター復帰: ON (${snapshot.ets2RelativeAccumulationResetTimeoutSecs.toFixed(2)}s)`
+                  : "自動センター復帰: OFF"}
+              </p>
+            </div>
+          </div>
+        </article>
 
         <article class="axis-advanced-card">
           <h3>Input Spike Rejection</h3>
